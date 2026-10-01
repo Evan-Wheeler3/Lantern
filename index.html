@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lanternkeeper — Ink &amp; Ember</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet" />
+    <style>
+      :root { --ink: #07060a; --oil: #1a1210; --ember: #ff8a1f; --cream: #ffe2b0; }
+      html, body { margin: 0; height: 100%; background: var(--ink); overflow: hidden; }
+      canvas#view { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+      #overlay {
+        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: radial-gradient(ellipse at 50% 60%, rgba(26, 18, 16, 0.55), rgba(7, 6, 10, 0.92) 70%);
+        color: var(--cream); font-family: 'IM Fell English', Georgia, serif; text-align: center; cursor: pointer;
+        transition: opacity 0.6s; user-select: none;
+      }
+      #overlay.hidden { opacity: 0; pointer-events: none; }
+      #overlay h1 { font-weight: normal; font-size: clamp(36px, 7vw, 84px); letter-spacing: 0.08em; margin: 0; color: var(--ember); }
+      #overlay .sub { font-style: italic; font-size: 20px; opacity: 0.8; margin: 6px 0 36px; }
+      #overlay .keys { font-size: 16px; line-height: 1.9; opacity: 0.85; }
+      #overlay .keys b { color: var(--ember); font-weight: normal; }
+      #overlay .go { margin-top: 32px; font-size: 22px; animation: breathe 2.6s ease-in-out infinite; }
+      @keyframes breathe { 50% { opacity: 0.35; } }
+      #fps {
+        position: fixed; left: 10px; top: 8px; font: 12px/1.3 ui-monospace, Menlo, Consolas, monospace;
+        color: var(--cream); background: rgba(7, 6, 10, 0.6); padding: 3px 7px; pointer-events: none; z-index: 10;
+      }
+      .toast {
+        position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); padding: 8px 14px;
+        background: var(--oil); color: var(--cream); font: 14px Georgia, serif; border: 1px solid var(--ember); z-index: 20;
+      }
+      .lil-gui { --background-color: #0d0b0e; --widget-color: #1a1210; --hover-color: #2a1d18; --focus-color: #3a271d;
+        --number-color: #ff8a1f; --string-color: #ffe2b0; --title-background-color: #1a1210; --text-color: #e8d2a8; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="overlay">
+      <h1>LANTERNKEEPER</h1>
+      <div class="sub">ink &amp; ember — style prototype</div>
+      <div class="keys">
+        <b>WASD</b> wade &nbsp; · &nbsp; <b>Shift</b> hurry &nbsp; · &nbsp; <b>Mouse</b> look<br />
+        <b>Click</b> / <b>F</b> shutter the lantern: focused beam ⟷ wide glow<br />
+        <b>H</b> hide the look-dev panel &nbsp; · &nbsp; <b>Esc</b> release the mouse
+      </div>
+      <div class="go">click to take up the lantern</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
