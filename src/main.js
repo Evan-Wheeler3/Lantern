@@ -47,7 +47,7 @@ const audio = new AudioSystem(engine.events);
 const hud = new HUD();
 const minimap = new Minimap(world.dungeon, engine.events, beacons);
 
-Object.assign(engine.services, { pipeline, scene, camera, world, beacons, game, player, lantern, monsters, audio });
+Object.assign(engine.services, { pipeline, scene, camera, world, beacons, game, player, lantern, monsters, audio, hud, minimap });
 
 // Screenshot / test hooks: ?cam=x,y,z,yawDeg,pitchDeg  &focus=1  &play=1
 const camParam = params.get('cam');
@@ -116,6 +116,8 @@ engine.events.on('pointerlock', (locked) => {
 document.addEventListener('pointerlockerror', () => console.warn('Pointer lock refused; click the canvas to retry.'));
 if (params.get('overlay') === '0') overlay.classList.add('hidden');
 if (params.get('play') === '1') game.start();
+
+for (const ev of ['died', 'won']) engine.events.on(ev, () => setTimeout(() => document.exitPointerLock?.(), 1500));
 
 // End card: another descent (new seed) or the same one again.
 document.getElementById('end-new').addEventListener('click', () => {

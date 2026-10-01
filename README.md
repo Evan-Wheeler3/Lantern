@@ -1,15 +1,18 @@
-# Lanternkeeper — "Ink and Ember" style prototype
+# Lanternkeeper — "Ink and Ember"
 
-A first-person walk through a drowned cathedral, lit by the lantern in your hand
-and rendered like a woodcut print. This phase is about **visual identity only**: no gameplay yet,
-but the code is structured so gameplay systems can be added later.
+A first-person descent through a drowned, procedurally generated undercroft, lit only by the lantern
+in your hand and rendered like a woodcut print.
 
-![Start](docs/screenshots/final_01_start.png)
+**Objective:** kindle the 5 dead beacons scattered through the rooms. When the last one catches, the
+sealed door unseals: find it and walk out. Shadow creatures hunt you in the dark between the beacons.
+Three touches and your flame goes out.
+
+![Hunted](docs/screenshots/01_hunted.png)
 
 | | |
 |---|---|
-| ![Aisle](docs/screenshots/final_02_aisle.png) | ![Beam on creature](docs/screenshots/final_03_beam_creature.png) |
-| ![Masonry](docs/screenshots/final_04_masonry.png) | ![Beam on pier](docs/screenshots/final_05_beam_pier.png) |
+| ![Frozen in the beam](docs/screenshots/02_frozen.png) | ![Kindled beacon](docs/screenshots/03_kindled.png) |
+| ![The exit opens](docs/screenshots/04_exit.png) | ![Map](docs/screenshots/05_map.png) |
 
 ## Run
 
@@ -29,32 +32,41 @@ Use a desktop browser with WebGL2 (Chrome, Edge, Firefox, Safari 16+). The rende
 
 | Input | Action |
 |-------|--------|
-| Click | Take up the lantern (pointer lock + audio start) |
+| Click | Take up the lantern (pointer lock + audio) and begin |
 | **W A S D** / arrows | Wade |
 | **Shift** | Hurry |
 | Mouse | Look |
-| **Click** / **F** | Shutter the lantern: focused beam ⟷ wide glow |
-| **H** | Hide/show the look-dev panel |
+| **Left click** / **F** | Shutter the lantern: focused beam ⟷ wide glow |
+| **Right click** (hold) | Off-hand blast: drive fire through the lantern |
+| **Space** (mash) | Pump oil into a burnt-out lantern |
+| **E** (hold) | Kindle a beacon |
+| **M** (hold) | Full map |
 | Esc | Release the mouse |
 
-## Look-dev panel
+## How it plays
 
-Every style parameter is live: palette, band thresholds, hatch density, thickness, wobble and angles,
-outline width, wobble and boil, water, fog, bloom, grain, paper, vignette, flame flicker, creature rim,
-player feel and audio mix. **Quality** switches High/Low at runtime. **View** shows debug buffers
-(raw colour, normals, light bands, fog, outlines, NaN check).
-**📋 Copy settings as JSON** puts the current look on the clipboard; paste it into `DEFAULTS` in
-`src/core/Settings.js` to make it the new baseline.
+* **Wide glow** slows the shadows. The **focused beam** holds them still and *charges* them: an
+  ember outline and hatching burn into the body, getting thicker the longer you hold it. At full
+  charge they **freeze for 5 seconds** (white-hot cross-hatching) even after the beam leaves them.
+* **Fire blast** (right click) burns any shadow in a short cone in front of you; frozen ones burn
+  faster. It forces the light into the beam and drains the fire meter (about 1 second from full). Run it
+  dry and the lantern **burns out**: dim, no beam or blast for ~4 s, or less if you mash Space.
+* **Beacons** become permanent room lights and sanctuaries. Shadows will not enter a kindled room,
+  and kindling one restores one lost flame.
+* **Minimap** (top right) reveals what your lantern has seen; kindled rooms are gilded.
+* Every run is a new seed. The end card offers a new descent or the same dark again.
 
-### URL parameters (handy for comparisons and screenshots)
+## URL parameters
 
 | Param | Example | Effect |
 |-------|---------|--------|
-| `quality` | `?quality=Low` | Start in the Low preset |
-| `cam` | `?cam=1.2,-0.22,-9,0,8` | Spawn at feet x,y,z with yaw°, pitch° |
-| `focus` | `&focus=1` | Start with the beam focused |
-| `settings` | `&settings=<base64 JSON>` | Load a settings snapshot |
-| `gui` / `overlay` | `&gui=0&overlay=0` | Hide panel / title card |
+| `seed` | `?seed=1234` | Replay a specific dungeon |
+| `quality` | `?quality=Low` | Low preset (lower resolution, cheaper shadows/fog) |
+| `dev` | `?dev=1` | Look-dev panel (every style slider, copy JSON) + FPS counter |
+| `cam` / `focus` / `play` / `overlay` | `?cam=0,-0.22,0,0,0&play=1&overlay=0` | Testing / screenshots |
+
+The style is locked to the defaults in `src/core/Settings.js`. The look-dev panel is still there
+behind `?dev=1` if you want to tune it. Gameplay numbers live in `src/core/GameConfig.js`.
 
 ## Documents
 

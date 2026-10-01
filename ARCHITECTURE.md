@@ -4,57 +4,87 @@ Style prototype built on Three.js (WebGL2) with a custom multi-pass pipeline and
 hand-written GLSL. No external assets: every mesh, texture and sound is procedural.
 
 ```
-index.html            title card, CSS, canvas
+index.html            title card, HUD markup, end cards, CSS
 src/
-  main.js             composition root: builds systems, registers them with the Engine
+  main.js             composition root: seed, systems, title/end flow
   core/
     Engine.js         clock + ordered list of systems (update/resize), service registry
-    EventBus.js       pub/sub between systems (footstep, drip, focusToggle, focus, pointerlock)
-    Settings.js       every style knob + quality presets; JSON load/save
-    noise.js          deterministic CPU noise (geometry displacement, textures)
-  renderer/
-    Pipeline.js       pass orchestration, render targets, quality/resize
-    Layers.js         render-layer contract (WORLD / VIEWMODEL / CAGE / WATER / FX)
-    SharedUniforms.js one uniform set referenced by every material; settings -> uniforms
-    Materials.js      material factories (world, creature, water, flame, embers, drips, shadow)
-    ShaderLib.js      registers GLSL chunks (#include <lk_*>) and exports sources
-    ProceduralTextures.js  64^3 noise volume, paper texture
-    passes/           ShadowPass, ReflectionPass, FogPass, BloomPass, CompositePass, FullscreenPass
-  shaders/            *.glsl (imported with Vite ?raw)
-    common.glsl       hashes, value noise, IGN, sRGB
-    lighting.glsl     the lantern: attenuation, beam cone, cube-shadow PCF
-    ink.glsl          band model, hatching, gouges, masonry  ("the look")
-    world.*.glsl      stone/iron/leather/viewmodel
-    creature.frag     black mass + rim
-    water.*.glsl      reflection, ripples, glint, oil film
-    flame/embers/drips/shadowDepth/fog/bloom*/composite
+    EventBus.js       pub/sub between systems
+    Settings.js       every STYLE knob (locked defaults) + quality presets
+    GameConfig.js     every GAMEPLAY number (meter, freeze, monsters, beacons)
+    noise.js          deterministic CPU noise + seeded RNG
+  renderer/           the Ink & Ember pipeline (unchanged contract, see below)
+  shaders/            GLSL; lighting.glsl also holds the beacon lights (lk_beacons)
   world/
-    World.js          the room as a system: owns dynamic pieces, answers spatial queries
-    Cathedral.js      procedural layout + geometry, colliders, walkables, drip/beacon/chain anchors
-    geo.js            geometry helpers (pointed arches, vaults, limbs, displacement, chunked merge)
-    Creatures.js      shadow creature silhouettes
-    Chains.js         instanced swinging chains + gibbet cage
-    Water.js, Ripples.js, Drips.js, Embers.js
+    Dungeon.js        seeded layout: rooms on a 1 m grid, MST hallways + loops, start/exit/beacons
+    DungeonBuilder.js grid -> geometry: merged wall runs, lintels, greedy ceilings, hall vaults,
+                      doorway arches, corridor ribs, per-room dressing; colliders, drips, chains
+    props.js          piers, crypt columns, sarcophagi, font, rubble, beacon braziers
+    geo.js            arches, vaults, limbs, displacement, chunked merge (2D bins)
+    World.js          builds a run's dungeon; collision, ground height, line of sight, start pose
+    Beacons.js        kindling (hold E), beacon fires as lights, sanctuaries, exit door + portal
+    Creatures.js      creature silhouettes (stalker, crawler)
+    Chains.js, Water.js, Ripples.js, Drips.js, Embers.js
+  game/
+    GameState.js      title -> playing -> dead | won; hits, messages, hurt/fade
+    Monsters.js       hunting AI (Dijkstra flow field), light response, charge/freeze, blast damage
+    FireJet.js        blast particles
   player/
-    PlayerController.js   pointer lock, WASD, sprint, wading inertia, collision, bob, footsteps
-    Lantern.js            viewmodel, flicker, sway pendulum, shutters, DRIVES the light uniforms
-  audio/
-    AudioSystem.js    Web Audio synthesis: drone, crackle, drips, footsteps, shutter, convolution reverb
-  debug/
-    DebugPanel.js     lil-gui look-dev panel, copy/paste JSON
-    FpsCounter.js     fps / ms / draw calls / triangles
+    PlayerController.js  pointer lock, WASD, sprint, wading, collision, bob; right-click / E / Space
+    Lantern.js           viewmodel, flicker, sway, shutters, fire meter, burnout, off hand; DRIVES the light
+  audio/AudioSystem.js   all procedural sound (ambience + gameplay cues)
+  ui/
+    HUD.js            beacon count, flames (hits), fire meter, prompts, messages, end cards
+    Minimap.js        fog-of-war map (canvas 2D), full map on M
+  debug/              look-dev panel + FPS (only with ?dev=1)
 ```
+
+## Gameplay systems
+
+**Dungeon generation (`Dungeon.js`).** 10 rooms (crypt 8–11 m, chapel 10–14 m, hall 12–26 m) are
+placed with rejection sampling on a 100 × 100 m grid, at least 5 m apart. A minimum spanning tree
+over room centres plus the two shortest extra edges gives loops; each edge is carved as an L-shaped
+3 m hallway. The start is a small room; the exit is the room with the most link hops from it; the 5
+beacons are spread over the rest by hop distance. Everything is deterministic per seed.
+
+**Geometry (`DungeonBuilder.js`).** Walls come from floor/solid cell edges merged into runs of ≤ 8 m.
+Ceiling height steps between rooms and hallways become lintels. Flat ceilings are greedy-meshed,
+and halls get a pointed barrel vault with gable ends, arcades of clustered piers and transverse
+ribs. Hallways get ribs on pilasters every 4 m, and doorways get arches on jambs. Rooms are dressed
+by kind. Everything is merged into 9 m chunks (~70 draw calls for the level, culled per pass).
+
+**Light as a game mechanic.** The lantern's light is computed identically in JS (`Monsters._lanternAt`)
+and in GLSL, with a grid line-of-sight test standing in for the shadow map:
+* glow (wide) → monsters slowed by up to 55 %
+* beam cone → monsters held still, charge rises (`chargeRate`); at 1 → frozen `freezeTime`
+* blast cone (`blastCos`, `blastRange`) → damage per second, doubled-ish on frozen targets, knockback
+
+**Monsters (`Monsters.js`).** A static per-cell cost (impassable under props, expensive beside walls)
+feeds a Dijkstra field from the player's cell, rebuilt every 0.4 s. Monsters descend the field, go
+straight at the player when they can see them within 7 m, sidestep when stuck, and treat kindled
+rooms as walls (both in the field and in collision). They drift around their room when the player
+is out of range. They respawn in dark rooms out of sight, up to 4 + beacons lit.
+
+**Beacons (`Beacons.js`, `lighting.glsl`).** Up to 8 extra lights in `uBeaconPos/uBeaconBox`. They
+cast no shadows; instead each is clipped to its room's bounds, which stops leaks through walls. The
+exit's glow uses the next slot once it opens.
+
+**Fire meter (`Lantern.js`).** Blasting drains 1/s; idle regenerates after a short delay; empty =
+burnout (light ×0.38, no beam/blast) until recovery reaches 1 over `burnoutTime`, with each Space
+press adding `pumpBoost`.
 
 ## Frame order
 
 Systems run in registration order each `requestAnimationFrame`:
 
 1. **Player** — input, movement, collision, head bob, emits `footstep`.
-2. **Lantern** — flicker, focus, sway; writes `uLightPos / Intensity / Range / SpotDir / Focus / LightColor`.
-3. **World** — chains swing, drips fall (emit `drip`), embers, water params.
-4. **Audio** — listener follows camera, crackle scheduler.
-5. **Render** — the pipeline below.
-6. **FPS** overlay.
+2. **Lantern** — meter/burnout, flicker, focus, sway; writes the light uniforms.
+3. **Beacons** — kindling, beacon lights, exit door.
+4. **Monsters** — flow field, AI, light response, attacks (`playerHit`).
+5. **World** — chains, drips (emit `drip`), embers, water.
+6. **FireJet**, **GameState**, **Audio**.
+7. **Render** — the pipeline below (+ hurt/fade uniforms).
+8. **UI** — HUD, minimap.
 
 ## Render pipeline
 
@@ -81,31 +111,22 @@ Systems run in registration order each `requestAnimationFrame`:
 * **Fog clipped to the light sphere**: the only participating light is the lantern,
   so marching outside its range is wasted work.
 
-## Extending toward gameplay
+## Extending
 
-* **New systems** — anything with `update(dt, time, engine)` → `engine.add(system, 'name')`.
-  Shared objects are on `engine.services` (`world`, `player`, `lantern`, `pipeline`, `audio`, `camera`, `scene`).
-* **Events** — `engine.events.on('footstep' | 'drip' | 'focus' | 'focusToggle' | 'pointerlock', fn)`.
-  AI can listen to footsteps; beacons can listen to focus.
-* **Spatial queries** — `world.blocked(x, z, r, feetY)`, `world.groundHeight(x, z)`,
-  `world.surfaceHeight(x, z)`; data in `world.colliders`, `world.walkables`.
-* **Beacons** — `world.beacons` lists anchor positions (`kind: 'tripod' | 'great'`).
-  Lighting one = a second light. The lighting chunk is single-light by design;
-  the intended extension is a small fixed array (`uBeaconPos[3]`, `uBeaconLit[3]`)
-  added to `lk_lighting`, each with its own cheap shadow (or none: beacons are
-  static, so their cube maps can be rendered once and cached).
-* **Creatures** — currently static meshes with the creature material. Animation can
-  move the mesh or add skinning; the shader needs only normals for the rim.
-* **Ripples** — `world.water.ripples.add(x, z, strength)` from anything (wading AI, thrown objects).
-* **Settings** — add a key to `DEFAULTS`, read it where needed, add a slider in
-  `DebugPanel.js`. JSON copy/paste picks it up automatically.
+* **Systems**: anything with `update(dt, time, engine)` → `engine.add(system, 'name')`; shared
+  objects on `engine.services`.
+* **Events**: `footstep, drip, focus, focusToggle, pump, blastStart, blastEnd, burnout, rekindled,
+  beaconLit, allLit, escaped, playerHit, hurt, monsterGrowl, monsterFrozen, monsterKilled, died, won`.
+* **New room kinds**: add to `KINDS` in `Dungeon.js` and a branch in `dressRoom`.
+* **New monster types**: add to `TYPES` in `Monsters.js` (geometry builder, speed, hp, radius).
+* **Tuning**: `GameConfig.js`.
 
 ## Performance notes
 
-* Static architecture is merged into ~20 spatial chunks (one draw call each, culled
-  per pass); total ≈ 30k triangles. Chains are one `InstancedMesh` (~570 links × 64 tris).
-* Per frame on High: ≈ 140–170 draw calls, ≈ 0.45M triangles across all 9 scene
-  renders (6 cube faces + reflection + main), dominated by the shadow cube.
+* A level is ≈ 70k triangles in ~70 chunks; chains are one `InstancedMesh` per chain (36-tri links)
+  with a fixed bounding sphere so they cull. The shadow cube's far plane follows the light range.
+* Per frame on High: ≈ 170–230 draw calls, ≈ 0.16–0.22M triangles across all 8 scene
+  renders (6 cube faces + reflection + main).
 * Fragment cost is dominated by the main pass (5-tap cube PCF + hatching) and the
   fog march; hatch work is skipped outside the mid/lit bands.
 * **Low** preset: 0.8 pixel ratio cap, 256² shadow, 1-tap shadow, 0.3 reflection,
@@ -131,3 +152,8 @@ Systems run in registration order each `requestAnimationFrame`:
 | Creatures | Inside of the open cloak flared cream at the hem (fresnel on back faces). | Back faces are never rimmed. |
 | Embers | In beam mode, embers took the beam's ×3 intensity and bloomed into blobs. | Ember heat depends on flame proximity only. |
 | Perf | 680k tris/frame: one merged room mesh drawn whole into all 6 cube faces; chains at 100 tris/link. | Chunked merge for culling; 64-tri links. |
+| Chains (v2) | Unculled chain links were drawn into all 8 passes: 640k tris/frame. | One culled InstancedMesh per chain, 36-tri links; shadow far = light range → ~200k. |
+| Monster AI | BFS paths hugged walls; monsters wedged on doorway jambs and piers. | Weighted Dijkstra field (props impassable, wall-adjacent cells expensive) + sidestep when stuck. |
+| Monster AI | Weighted distances exceeded the aggro radius, so monsters only wandered. | Aggro on weighted distance 55 or direct sight within 16 m. |
+| Readability | Charged and frozen creatures looked alike (thin rim only). | Charge engraves ember hatching into the body; frozen = white-hot cross-hatch. |
+| Blast | Fire particles saturated into a cream blob hiding the target. | Fewer, smaller, dimmer tongues; emitted ahead of the lantern. |
