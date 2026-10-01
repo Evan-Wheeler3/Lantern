@@ -257,7 +257,7 @@ export class Lantern {
   update(dt, t, player, game, ctx = {}) {
     const L = settings.light;
     const playing = !game || game.state === 'playing';
-    const stowWanted = !!ctx.collecting || !!ctx.priming;
+    const stowWanted = !!ctx.collecting;
     const away = !!this.thrown;
 
     // ---- fire meter: blast drains, rest refills, empty = burnout ----
@@ -288,6 +288,10 @@ export class Lantern {
     this.blast += ((this.blasting ? 1 : 0) - this.blast) * (1 - Math.exp(-dt * (this.blasting ? 18 : 6)));
     this.pose += ((this.blasting ? 1 : 0) - this.pose) * (1 - Math.exp(-dt * (this.blasting ? 14 : 7)));
     this.stow += ((stowWanted && !away ? 1 : 0) - this.stow) * (1 - Math.exp(-dt * 9));
+    // firebomb: douse (lantern held low in front, sack pouring over it), then cock
+    // back beside the head, further the harder you charge
+    this.douse = (this.douse || 0) + ((ctx.priming && !ctx.charging ? 1 : 0) - (this.douse || 0)) * (1 - Math.exp(-dt * 10));
+    this.cock = (this.cock || 0) + ((ctx.charging ? 1 : 0) - (this.cock || 0)) * (1 - Math.exp(-dt * 12));
 
     const hits = game ? game.hits : 0;
     const targetDim = [1, 0.8, 0.64, 0.5][Math.min(hits, 3)];
@@ -304,6 +308,7 @@ export class Lantern {
     f = THREE.MathUtils.lerp(f, 1 + (f - 1) * 0.5, this.focus);
     if (this.burnout) f *= 0.45 + 0.4 * n1(tt * 9.0, 9) + 0.15 * n1(tt * 31.0, 10);
     if (this.blast > 0.01) f = THREE.MathUtils.lerp(f, 1.15 + 0.25 * n1(tt * 40.0, 11), this.blast);
+    if ((this.cock || 0) > 0.01) f *= 1 + 0.35 * this.cock; // oil-soaked: it roars
     this.flicker = f;
 
     // ---- focus (shutters) ----
@@ -338,12 +343,19 @@ export class Lantern {
     const b = player.bob;
     const se = this.stow * this.stow * (3 - 2 * this.stow);
     this._tmp.copy(this.holdPos).lerp(this.blastPos, pe).lerp(this.stowPos, se);
+    const de = this.douse, ce = this.cock, ch = ctx.charge || 0;
+    if (de > 0.001) this._tmp.lerp(this._dousePos || (this._dousePos = new THREE.Vector3(0.05, -0.2, -0.42)), de);
+    if (ce > 0.001) {
+      const cp = this._cockPos || (this._cockPos = new THREE.Vector3());
+      cp.set(0.3 + 0.05 * ch, 0.0 + 0.06 * ch, -0.3 + 0.16 * ch);
+      this._tmp.lerp(cp, ce);
+    }
     this.root.position.set(
       this._tmp.x + this.lag.x * sw - b.x * 0.4,
       this._tmp.y + this.lag.y * sw - b.y * 0.5 + Math.sin(t * 1.3) * 0.003 + (this.blast > 0.5 ? (Math.random() - 0.5) * 0.003 : 0),
       this._tmp.z + this.focus * 0.06 * (1 - pe),
     );
-    this.root.rotation.set(-0.15 * pe, -this.lag.x * 1.5, this.lag.x * 0.8 + 0.25 * pe);
+    this.root.rotation.set(-0.15 * pe + (0.35 + 0.5 * ch) * ce, -this.lag.x * 1.5 - 0.35 * ce, this.lag.x * 0.8 + 0.25 * pe - (0.3 + 0.3 * ch) * ce);
     this.root.visible = !away && se < 0.98;
 
     // ---- drive the light ----
@@ -389,12 +401,13 @@ export class Lantern {
     }
 
     // ---- the oil sack, both hands ----
-    const sackGoal = ctx.collecting ? 1 : ctx.priming ? 0.6 : 0;
+    const sackGoal = ctx.collecting ? 1 : (ctx.priming && !ctx.charging) ? 0.6 : 0;
     const sb = (this._sack = (this._sack || 0) + (sackGoal - (this._sack || 0)) * (1 - Math.exp(-dt * 8)));
     this.sackRig.visible = sb > 0.02;
     if (this.sackRig.visible) {
-      this.sackRig.position.set(0, -0.8 + 0.45 * sb - b.y * 0.3, -0.42);
-      this.sackRig.rotation.set(0.35 + Math.sin(t * 7) * 0.06 * (ctx.collecting ? 1 : 0), 0, Math.sin(t * 3.5) * 0.05);
+      // pouring: when dousing, the sack rises over the lantern and tips forward
+      this.sackRig.position.set(-0.04 * de, -0.8 + 0.45 * sb + 0.5 * de - b.y * 0.3, -0.42 - 0.04 * de);
+      this.sackRig.rotation.set(0.35 + 1.1 * de + Math.sin(t * 7) * 0.06 * (ctx.collecting ? 1 : 0), 0, Math.sin(t * 3.5) * 0.05 - 0.4 * de);
     }
   }
 }

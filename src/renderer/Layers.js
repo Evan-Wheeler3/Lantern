@@ -5,4 +5,6 @@ export const LAYERS = {
   CAGE: 2,       // lantern cage posts: shadow casters only (stripes on the walls)
   WATER: 3,      // the water plane: main pass only
   FX: 4,         // embers, drips, flame: main + reflection, never shadow
+  HELDFX: 5,     // the held lantern's flame: main pass only (the water draws its own glint;
+                 // a mirrored flame this close to the camera floods the reflection)
 };

@@ -26,7 +26,7 @@ void main() {
   vec3 V = normalize(cameraPosition - vWorldPos);
   vec3 toL = uLightPos - vWorldPos;
   float d = length(toL);
-  float glow = max(uCharge, uFrozen);
+  float glow = clamp(max(uCharge, uFrozen), 0.0, 1.0);
   float reach = lk_sat(uRim.z + lk_attenuation(d) * lk_spot(-toL / d) * uLightIntensity * 2.5 + glow);
 
   // Death: burn away from the edges of a noise field, with a hot cream margin.

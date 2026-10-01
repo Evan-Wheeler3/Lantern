@@ -20,12 +20,12 @@ varying float vK;
 void main() {
   vK = aK;
   vec4 mv = viewMatrix * vec4(position, 1.0);
-  gl_PointSize = clamp((aK > 0.99 ? 0.22 : 0.06) * uPxScale / max(-mv.z, 0.1), 2.0, 40.0);
+  // trail dots stay small even right in front of the camera
+  gl_PointSize = aK > 0.99 ? clamp(0.5 * uPxScale / max(-mv.z, 0.1), 6.0, 60.0) : clamp(0.05 * uPxScale / max(-mv.z, 0.1), 2.0, 7.0);
   gl_Position = projectionMatrix * mv;
 }`;
 const guideFrag = `
-layout(location = 1) out highp vec4 gNormal;
-uniform vec3 uEmber;
+uniform vec3 uEmber;  // final (sRGB) palette colours: this is drawn after the print pass
 uniform vec3 uCream;
 varying float vK;
 void main() {
@@ -33,8 +33,8 @@ void main() {
   float r = length(c) * 2.0;
   float ring = vK > 0.99 ? smoothstep(0.65, 0.75, r) * (1.0 - smoothstep(0.9, 1.0, r)) : 1.0 - smoothstep(0.6, 1.0, r);
   if (ring <= 0.01) discard;
-  gl_FragColor = vec4(mix(uEmber * 1.4, uCream * 2.0, vK) * ring, 1.0);
-  gNormal = vec4(0.0);
+  // normal blending: dots overlapping along the line of sight must not add up into bloom
+  gl_FragColor = vec4(mix(uEmber, uCream, vK), ring * (vK > 0.99 ? 1.0 : 0.85));
 }`;
 
 export class Firebomb {
@@ -78,19 +78,18 @@ export class Firebomb {
     g.setAttribute('position', new THREE.BufferAttribute(this.guidePos, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aK', new THREE.BufferAttribute(ks, 1));
     this.guide = new THREE.Points(g, new THREE.ShaderMaterial({
-      uniforms: { uPxScale: shared.uPxScale, uEmber: shared.uEmber, uCream: shared.uCream },
-      vertexShader: guideVert, fragmentShader: guideFrag, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: { uPxScale: shared.uPxScale, uEmber: { value: new THREE.Vector3(1.0, 0.541, 0.122) }, uCream: { value: new THREE.Vector3(1.0, 0.886, 0.69) } },
+      vertexShader: guideVert, fragmentShader: guideFrag, transparent: true, depthWrite: false,
     }));
     this.guide.frustumCulled = false;
-    this.guide.layers.set(LAYERS.FX);
-    this.guide.visible = false;
-    scene.add(this.guide);
+    this.guide.visible = false; // drawn on the 2D aim canvas instead (ui/AimOverlay.js)
+    this.guideCount = 0;
 
     // pool fire visuals: a ring of flames + rising tongues
     this.poolFlames = [];
-    for (let k = 0; k < 14; k++) {
+    for (let k = 0; k < 9; k++) {
       const m = createFlameMaterial();
-      m.uniforms.uFlameGain.value = 0.35;
+      m.uniforms.uFlameGain.value = 0.12; // many big flames: keep each one dim so they don't bloom together
       const pg = new THREE.PlaneGeometry(0.8, 1.7);
       pg.translate(0, 0.85, 0);
       const f = new THREE.Mesh(pg, m);
@@ -122,6 +121,10 @@ export class Firebomb {
     });
     Object.defineProperty(it, 'x', { get: () => this.pos.x });
     Object.defineProperty(it, 'z', { get: () => this.pos.z });
+  }
+
+  get radius() {
+    return GAME.throwRadius;
   }
 
   get priming() {
@@ -185,11 +188,13 @@ export class Firebomb {
       let n = 0;
       for (let s = 0; s < 120 && n < GUIDE_N - 1; s++) {
         const hit = this._step(p, v, 0.035);
-        if (s % 3 === 0) { this.guidePos.set([p.x, p.y, p.z], n * 3); n++; }
+        if (s % 2 === 0 && s > 6) { this.guidePos.set([p.x, p.y, p.z], n * 3); n++; }
         if (hit) break;
       }
-      for (let k = n; k < GUIDE_N - 1; k++) this.guidePos.set([p.x, p.y, p.z], k * 3);
+      // unused dots go under the floor (stacked additive dots would bloom into a blob)
+      for (let k = n; k < GUIDE_N - 1; k++) this.guidePos.set([p.x, -50, p.z], k * 3);
       this.guidePos.set([p.x, Math.max(p.y, 0.03), p.z], (GUIDE_N - 1) * 3);
+      this.guideCount = n;
       this.guide.geometry.attributes.position.needsUpdate = true;
       if (!wants) {
         // release: throw
@@ -230,9 +235,9 @@ export class Firebomb {
       if (life <= 0) { this.pools.splice(i, 1); continue; }
       pl.level = Math.min(1, pl.t * 4) * Math.min(1, life * 3);
       lit = Math.max(lit, pl.level);
-      shared.uBeaconPos.value[POOL_SLOT].set(pl.x, 0.9, pl.z, pl.level * 2.4 * (0.85 + 0.3 * Math.random()));
+      shared.uBeaconPos.value[POOL_SLOT].set(pl.x, 0.9, pl.z, pl.level * 1.8 * (0.85 + 0.3 * Math.random()));
       shared.uBeaconBox.value[POOL_SLOT].set(pl.x - pl.r * 3.5, pl.z - pl.r * 3.5, pl.x + pl.r * 3.5, pl.z + pl.r * 3.5);
-      for (let s = 0; s < dt * 110; s++) {
+      for (let s = 0; s < dt * 45; s++) {
         const a = Math.random() * 6.28, r = Math.sqrt(Math.random()) * pl.r;
         this.sparks.push({ x: pl.x + Math.cos(a) * r, y: 0.05, z: pl.z + Math.sin(a) * r, vy: 1.2 + Math.random() * 1.6, a: 0, life: 0.5 + Math.random() * 0.5, s: Math.random() });
       }
@@ -242,7 +247,7 @@ export class Firebomb {
     for (const f of this.poolFlames) {
       f.mesh.visible = !!pl;
       if (!pl) continue;
-      const rr = Math.sqrt(f.r) * pl.r * 0.85;
+      const rr = (0.35 + 0.65 * Math.sqrt(f.r)) * pl.r * 0.85; // ring of fire, the lantern in the clear middle
       f.mesh.position.set(pl.x + Math.cos(f.a) * rr, 0.0, pl.z + Math.sin(f.a) * rr);
       f.mesh.scale.setScalar(f.s * pl.level * (0.8 + 0.4 * Math.sin(t * 7 + f.a * 3)));
       f.mat.uniforms.uFlicker.value = 0.6 + 0.4 * Math.sin(t * 11 + f.a * 5);

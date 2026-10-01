@@ -29,6 +29,7 @@ import { AudioSystem } from './audio/AudioSystem.js';
 import { HUD } from './ui/HUD.js';
 import { Minimap } from './ui/Minimap.js';
 import { Plates } from './ui/Plate.js';
+import { AimOverlay } from './ui/AimOverlay.js';
 import { Shrine, consumePaidTicket } from './ui/Shrine.js';
 
 const params = new URLSearchParams(location.search);
@@ -77,6 +78,7 @@ const monsters = new Monsters(scene, world, engine.events, seed, round, { firebo
 const fire = new FireJet(scene);
 const audio = new AudioSystem(engine.events);
 const hud = new HUD();
+const aim = new AimOverlay();
 const minimap = new Minimap(world.dungeon, engine.events, beacons, doors, oil);
 lantern.canBlast = abilities.has('blast');
 firebomb.enabled = abilities.has('throw');
@@ -99,7 +101,7 @@ if (params.get('focus') === '1') engine.events.emit('focusToggle');
 monsters.spawnInitial(player.feet);
 
 const _right = new THREE.Vector3();
-const ctxFor = () => ({ collecting: oil.collecting, priming: firebomb.priming });
+const ctxFor = () => ({ collecting: oil.collecting, priming: firebomb.priming, charging: firebomb.state === 'charging', charge: firebomb.charge });
 engine.add({
   update: (dt) => {
     player.enabled = (game.state === 'playing' || game.state === 'title') && !game.paused;
@@ -148,6 +150,7 @@ engine.add({
   update: (dt) => {
     hud.update(game, lantern, { beacons, interactions, economy, abilities, firebomb, doors, round });
     minimap.update(dt, player);
+    aim.update(firebomb, camera);
   },
 }, 'uiSystem');
 

@@ -109,6 +109,7 @@ export class Pipeline {
     camera.layers.enable(LAYERS.VIEWMODEL);
     camera.layers.enable(LAYERS.WATER);
     camera.layers.enable(LAYERS.FX);
+    camera.layers.enable(LAYERS.HELDFX);
     r.setRenderTarget(this.mainRT);
     r.setClearColor(0x000000, 0);
     r.render(scene, camera);
@@ -129,5 +130,6 @@ export class Pipeline {
       width: this.bufferSize[0],
       height: this.bufferSize[1],
     }, camera, settings, this.pixelRatio, this.debugView);
+
   }
 }
