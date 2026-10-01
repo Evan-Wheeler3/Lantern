@@ -65,10 +65,11 @@ void main() {
   // --- oil film: contour lines of a slowly advected scalar field ---
   vec3 sq = vec3(p * 0.09 * uWaterB.y + vec2(t * 0.004, t * 0.003) * uWaterB.z, t * 0.006 * uWaterB.z);
   float oil = texture(uNoise3D, sq).r * 0.7 + texture(uNoise3D, sq * 2.3 + 0.5).g * 0.3;
-  float contour = oil * 11.0 + t * 0.03 * uWaterB.z;
+  float contour = oil * 7.0 + t * 0.03 * uWaterB.z;
   float cfw = fwidth(contour);
   float cd = abs(fract(contour) - 0.5);
-  float oilLine = (1.0 - smoothstep(0.025 - cfw, 0.025 + cfw, 0.5 - cd)) * (1.0 - smoothstep(0.3, 0.7, cfw));
+  // Hairline contours (~1px, screen-constant): engraved film edges, not a map.
+  float oilLine = (1.0 - smoothstep(0.0, cfw * 0.75, 0.5 - cd)) * (1.0 - smoothstep(0.25, 0.6, cfw));
   // film tears: contours break up instead of reading as a map
   oilLine *= smoothstep(0.35, 0.6, texture(uNoise3D, sq * 3.1 + 0.2).b);
   float oilPatch = smoothstep(0.35, 0.65, oil);
@@ -118,11 +119,11 @@ void main() {
   glint = lk_posterize(lk_sat(glint), 3.0);
 
   vec3 col = uInk * 0.6;
-  col += uOil * 1.4 * atten * sh * uLightIntensity * (0.4 + 0.6 * oilPatch); // barely-lit murk: water stays black
+  col += uOil * 0.7 * atten * sh * uLightIntensity * (0.4 + 0.6 * oilPatch); // barely-lit murk: water stays black
   col += refl;
   // oil contours glow faintly where light touches
   float sheenLight = lk_sat(atten * sh * uLightIntensity * 1.5);
-  col = mix(col, mix(uOil * 5.0, uEmber * 0.6, sheenLight), oilLine * uWaterB.x * sheenLight * 0.6);
+  col = mix(col, mix(uOil * 5.0, uEmber * 0.6, sheenLight), oilLine * uWaterB.x * sheenLight * (0.25 + 0.5 * oilPatch));
   col = mix(col, uCream, lk_sat(glint) );
   col += uEmber * max(glint - 1.0, 0.0);
 

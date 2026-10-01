@@ -14,12 +14,12 @@ export class PlayerController {
     this.events = events;
     this.dom = dom;
 
-    this.feet = new THREE.Vector3(0, world.layout.floorY, 3.2);
+    this.feet = new THREE.Vector3(-0.1, world.layout.floorY, 3.7);
     this.vel = new THREE.Vector3();
     this.prevVel = new THREE.Vector3();
     this.accelLocal = new THREE.Vector3();
-    this.yaw = 0;
-    this.pitch = -0.04;
+    this.yaw = 0.2;
+    this.pitch = -0.08;
     this.yawRate = 0;
     this.pitchRate = 0;
     this._mouse = { dx: 0, dy: 0 };

@@ -52,19 +52,31 @@ function buildPosts() {
   return merge(P);
 }
 
+function polyPath(cx, cy, n, r0, r1, rot = 0) {
+  const p = new THREE.Path();
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rot;
+    const r = i % 2 ? r1 : r0;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (i === 0) p.moveTo(x, y); else p.lineTo(x, y);
+  }
+  return p;
+}
+
 function buildShutterPanel() {
-  // 0.1 x 0.16 panel with a pierced star; local origin at the hinge edge.
+  // 0.1 x 0.16 punched-tin plate; local origin at the hinge edge. When the
+  // shutters close, these holes are the only way out for the light: they glow
+  // in view and project a star pattern through the shadow map.
   const shape = new THREE.Shape([
     new THREE.Vector2(0, 0), new THREE.Vector2(0.1, 0), new THREE.Vector2(0.1, 0.16), new THREE.Vector2(0, 0.16),
   ]);
-  const hole = new THREE.Path();
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    const r = i % 2 ? 0.012 : 0.026;
-    const v = new THREE.Vector2(0.05 + Math.cos(a) * r, 0.085 + Math.sin(a) * r);
-    if (i === 0) hole.moveTo(v.x, v.y); else hole.lineTo(v.x, v.y);
+  shape.holes.push(polyPath(0.05, 0.075, 10, 0.03, 0.013, Math.PI / 2));
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    shape.holes.push(polyPath(0.05 + Math.cos(a) * 0.041, 0.075 + Math.sin(a) * 0.05, 6, 0.0045, 0.0045));
   }
-  shape.holes.push(hole);
+  shape.holes.push(polyPath(0.05, 0.148, 8, 0.004, 0.004));
+  shape.holes.push(polyPath(0.05, 0.01, 8, 0.004, 0.004));
   const g = new THREE.ExtrudeGeometry(shape, { depth: 0.003, bevelEnabled: false });
   return finalize(g, BRASS);
 }

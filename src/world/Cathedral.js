@@ -334,6 +334,25 @@ export function buildCathedral() {
     beacons.push({ x: bx, y: base + 2.45, z: bz, kind: 'great' });
   }
 
+  // ---------------------------------------------------------------- the font: first thing the lantern finds
+  {
+    const fx = -1.7, fz = 1.4;
+    add(new THREE.CylinderGeometry(0.42, 0.5, 0.3, 8), { ...STONE, flat: true, matrix: mat([fx, -0.05, fz]) });
+    add(new THREE.CylinderGeometry(0.2, 0.28, 0.75, 8, 3), { ...STONE, flat: true, matrix: mat([fx, 0.45, fz]), disp: 0.015 });
+    const prof = [[0.12, 0], [0.4, 0.05], [0.58, 0.2], [0.64, 0.38], [0.6, 0.4], [0.52, 0.24], [0.3, 0.12], [0.05, 0.1]].map(([r, y]) => new THREE.Vector2(r, y));
+    const basin = new THREE.LatheGeometry(prof, 8);
+    // a bite broken out of the rim
+    const bp = basin.attributes.position;
+    for (let i = 0; i < bp.count; i++) {
+      const a = Math.atan2(bp.getZ(i), bp.getX(i));
+      if (bp.getY(i) > 0.3 && Math.abs(a - 0.6) < 0.5) bp.setY(i, 0.18 + Math.abs(a - 0.6) * 0.25);
+    }
+    add(basin, { ...STONE, flat: true, matrix: mat([fx, 0.8, fz], [0.08, 0.3, -0.05]) });
+    add(new THREE.CylinderGeometry(0.5, 0.5, 0.02, 8), { ...DARK_STONE, gloss: 1, matrix: mat([fx, 1.06, fz]) }); // still water
+    add(new THREE.DodecahedronGeometry(0.16, 0), { ...STONE, flat: true, matrix: mat([fx + 0.6, 0.04, fz - 0.3], [1, 2, 0.5]) });
+    colliders.circles.push({ x: fx, z: fz, r: 0.75 });
+  }
+
   // ---------------------------------------------------------------- scattered rubble & a toppled column in the nave
   add(new THREE.CylinderGeometry(0.42, 0.42, 3.6, 14, 6), { ...STONE, matrix: mat([-1.9, 0.18, -9.0], [0, 1.1, Math.PI / 2]), disp: 0.04, seed: 77 });
   boxCollider(-1.9, -9.0, 1.6, 0.9, 0.6);

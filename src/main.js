@@ -71,9 +71,11 @@ const overlay = document.getElementById('overlay');
 canvas.addEventListener('click', () => audio.start());
 overlay.addEventListener('click', () => {
   audio.start();
+  overlay.classList.add('hidden'); // even if pointer lock is refused, show the scene
   canvas.requestPointerLock?.();
 });
 engine.events.on('pointerlock', (locked) => overlay.classList.toggle('hidden', locked));
+document.addEventListener('pointerlockerror', () => console.warn('Pointer lock refused; click the canvas to retry.'));
 if (params.get('overlay') === '0') overlay.classList.add('hidden');
 
 window.__lk = engine; // console access for look-dev
