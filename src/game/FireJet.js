@@ -4,7 +4,7 @@ import { createFireMaterial } from '../renderer/Materials.js';
 import { LAYERS } from '../renderer/Layers.js';
 import { shared } from '../renderer/SharedUniforms.js';
 
-const MAX = 320;
+const MAX = 520;
 
 export class FireJet {
   constructor(scene) {
@@ -22,21 +22,39 @@ export class FireJet {
     this.points.layers.set(LAYERS.FX);
     scene.add(this.points);
     this._acc = 0;
+    this._u = new THREE.Vector3();
+    this._w = new THREE.Vector3();
+    this._up = new THREE.Vector3(0, 1, 0);
   }
 
   update(dt, lantern) {
     const dir = shared.uSpotDir.value;
     if (lantern.blasting) {
-      this._acc += dt * 150;
+      this._acc += dt * 230;
       const o = lantern.flameWorld;
+      // basis across the jet, so the flame front can be cut into a star
+      this._u.crossVectors(dir, this._up).normalize();
+      this._w.crossVectors(this._u, dir).normalize();
+      const spin = performance.now() * 0.0004;
       while (this._acc >= 1 && this.p.length < MAX) {
         this._acc -= 1;
-        const sp = 7 + Math.random() * 4;
-        const jx = (Math.random() - 0.5) * 1.6, jy = (Math.random() - 0.5) * 1.2, jz = (Math.random() - 0.5) * 1.6;
+        const sp = 7.5 + Math.random() * 3;
+        let ex = 0, ey = 0;
+        if (Math.random() < 0.85) {
+          // a point on the outline of a five-pointed star
+          const k = Math.floor(Math.random() * 10), f = Math.random();
+          const a0 = (k / 10) * Math.PI * 2 + spin, a1 = ((k + 1) / 10) * Math.PI * 2 + spin;
+          const r0 = k % 2 ? 0.42 : 1, r1 = k % 2 ? 1 : 0.42;
+          ex = Math.cos(a0) * r0 * (1 - f) + Math.cos(a1) * r1 * f;
+          ey = Math.sin(a0) * r0 * (1 - f) + Math.sin(a1) * r1 * f;
+        }
+        const spread = 4.2;
         this.p.push({
           x: o.x + dir.x * 0.22, y: o.y + dir.y * 0.22 + 0.02, z: o.z + dir.z * 0.22,
-          vx: dir.x * sp + jx, vy: dir.y * sp + jy + 0.3, vz: dir.z * sp + jz,
-          a: 0, life: 0.28 + Math.random() * 0.2, s: Math.random(),
+          vx: dir.x * sp + (this._u.x * ex + this._w.x * ey) * spread,
+          vy: dir.y * sp + (this._u.y * ex + this._w.y * ey) * spread + 0.2,
+          vz: dir.z * sp + (this._u.z * ex + this._w.z * ey) * spread,
+          a: 0, life: 0.3 + Math.random() * 0.18, s: Math.random(),
         });
       }
     } else this._acc = 0;

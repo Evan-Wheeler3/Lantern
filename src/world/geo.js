@@ -206,3 +206,20 @@ export function vaultGeometry(span, f, z0, z1, segX = 36, segZ = 24) {
   g.computeVertexNormals();
   return g;
 }
+
+// Mirror-safe: swap two vertices of every triangle (non-indexed geometry) so a
+// negatively-scaled mesh keeps outward-facing triangles.
+export function flipWinding(g) {
+  for (const name of Object.keys(g.attributes)) {
+    const a = g.attributes[name];
+    const n = a.itemSize;
+    for (let t = 0; t < a.count; t += 3) {
+      for (let c = 0; c < n; c++) {
+        const i1 = (t + 1) * n + c, i2 = (t + 2) * n + c;
+        const tmp = a.array[i1]; a.array[i1] = a.array[i2]; a.array[i2] = tmp;
+      }
+    }
+    a.needsUpdate = true;
+  }
+  return g;
+}

@@ -14,7 +14,9 @@ void main() {
   float outer = 1.0 - smoothstep(0.75, 0.9, r + vAge * 0.4);
   if (outer <= 0.0) discard;
   float core = 1.0 - smoothstep(0.35, 0.45, r + vAge * 0.9);
-  vec3 col = mix(uEmber * 1.2, uCream * 3.2, core) * fade * fade;
+  // fade in as the star front opens, so the lantern mouth doesn't bloom into a blob
+  float open = smoothstep(0.0, 0.3, vAge);
+  vec3 col = mix(uEmber * 1.2, uCream * 2.6, core) * fade * fade * open;
   gl_FragColor = vec4(col * outer, 1.0);
   gNormal = vec4(0.0);
 }

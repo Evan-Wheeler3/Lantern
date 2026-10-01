@@ -9,6 +9,7 @@ uniform float uFlicker;   // 0..1 instantaneous brightness from the lantern syst
 uniform vec3 uEmber;
 uniform vec3 uCream;
 uniform float uFlameGain;
+uniform float uLean;     // draft: the tip bends toward an open door
 
 varying vec2 vUv;
 
@@ -18,6 +19,7 @@ void main() {
   float n1 = lk_vnoise(vec2(y * 3.0 - uTime * 5.3, uTime * 1.3));
   float n2 = lk_vnoise(vec2(y * 8.0 - uTime * 11.0, 4.0 + uTime * 2.1));
   x += ((n1 - 0.5) * 0.8 + (n2 - 0.5) * 0.3) * y * y;
+  x -= uLean * y * y * 1.4;
 
   float height = 0.72 + 0.28 * uFlicker + (n1 - 0.5) * 0.12;
   float yy = y / height;

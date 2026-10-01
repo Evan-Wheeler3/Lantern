@@ -40,7 +40,7 @@ export class PlayerController {
 
     dom.addEventListener('click', () => {
       if (!this.locked) dom.requestPointerLock?.();
-      else events.emit('focusToggle');
+      else if (!this.inputBlocked) events.emit('focusToggle');
     });
     dom.addEventListener('mousedown', (e) => { if (e.button === 2 && this.locked) this.rightHeld = true; });
     window.addEventListener('mouseup', (e) => { if (e.button === 2) this.rightHeld = false; });
@@ -57,7 +57,7 @@ export class PlayerController {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') e.preventDefault();
-      if (!e.repeat && e.code === 'Space') events.emit('pump');
+      if (!e.repeat && e.code === 'Space' && !this.inputBlocked) events.emit('pump');
       this.keys.add(e.code);
       if (e.code === 'KeyF') events.emit('focusToggle');
     });
@@ -85,6 +85,7 @@ export class PlayerController {
     // ---- move ----
     const k = this.enabled ? this.keys : new Set();
     this.interactHeld = this.enabled && k.has('KeyE');
+    this.throwHeld = this.enabled && k.has('KeyQ');
     if (!this.enabled) this.rightHeld = false;
     let fx = 0, fz = 0;
     if (k.has('KeyW') || k.has('ArrowUp')) fz -= 1;

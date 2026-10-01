@@ -27,6 +27,12 @@ export class Drips {
     this.points.layers.set(LAYERS.FX);
   }
 
+  // A single drop falling from (x, y, z) — e.g. off a ceiling crawler.
+  drop(x, y, z) {
+    if (this.drops.length >= MAX_DROPS) return;
+    this.drops.push({ x, y, z, vy: 0, floor: this.surfaceHeightAt(x, z), life: 0.35 });
+  }
+
   update(dt) {
     const rate = settings.particles.dripRate;
     if (rate > 0) {

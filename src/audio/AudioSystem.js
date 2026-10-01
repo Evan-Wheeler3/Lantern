@@ -75,6 +75,18 @@ export class AudioSystem {
     events.on('monsterKilled', (m) => this.burnAway(m));
     events.on('died', () => this.sting(false));
     events.on('won', () => this.sting(true));
+    events.on('oilScoop', (o) => this.scoop(o));
+    events.on('throwPrime', () => this.glug());
+    events.on('throw', () => this.whoosh(0.7, 400));
+    events.on('fireExplosion', (e) => this.explode(e));
+    events.on('lanternRetrieved', () => this.shutter(false));
+    events.on('doorUnlocked', (d) => this.barFall(d));
+    events.on('doorRattle', (d) => this.rattle(d));
+    events.on('doorOpen', (d) => this.creak(d));
+    events.on('crawlerDrop', (m) => this.skitter(m));
+    events.on('crawlerLand', (m) => this.footstep({ x: m.x, z: m.z, wet: true, speed: 4, side: 0 }));
+    events.on('storyWake', (s) => this.kindleChord(s));
+    events.on('plateOpen', () => this.pageTurn());
   }
 
   // Must be called from a user gesture.
@@ -495,6 +507,7 @@ export class AudioSystem {
   // Positional growl: formant-filtered brown noise + a dragging sub tone.
   growl(m) {
     if (!this.ctx) return;
+    if (m.type === 'moth') { this.flutter(m); return; }
     const ctx = this.ctx, t = ctx.currentTime + 0.01;
     const p = this._panner(m.x, 1.4, m.z);
     p.refDistance = 2.5;
@@ -502,7 +515,7 @@ export class AudioSystem {
     const dur = 0.9 + Math.random() * 0.8;
     const s = ctx.createBufferSource();
     s.buffer = this.brown;
-    for (const [f, q, a] of [[m.type === 'crawler' ? 520 : 320, 6, 1.0], [m.type === 'crawler' ? 1300 : 900, 8, 0.5]]) {
+    for (const [f, q, a] of [[m.type === 'hound' ? 520 : 320, 6, 1.0], [m.type === 'hound' ? 1300 : 900, 8, 0.5]]) {
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass'; bp.Q.value = q;
       bp.frequency.setValueAtTime(f, t);
@@ -514,8 +527,8 @@ export class AudioSystem {
     s.start(t, Math.random() * 3, dur + 0.1);
     const o = ctx.createOscillator();
     o.type = 'sawtooth';
-    o.frequency.setValueAtTime(m.type === 'crawler' ? 62 : 44, t);
-    o.frequency.linearRampToValueAtTime(m.type === 'crawler' ? 50 : 36, t + dur);
+    o.frequency.setValueAtTime(m.type === 'hound' ? 62 : 44, t);
+    o.frequency.linearRampToValueAtTime(m.type === 'hound' ? 50 : 36, t + dur);
     const og = ctx.createGain();
     this._env(og, t, dur * 0.5, 0.25, dur * 0.5);
     const lp = ctx.createBiquadFilter();
@@ -582,6 +595,138 @@ export class AudioSystem {
       o.start(t + k * 0.35); o.stop(t + k * 0.35 + 4.5);
     });
     if (!won) this.droneGain?.gain.setTargetAtTime(0.02, ctx.currentTime, 2);
+  }
+
+  _at(x, y, z, wet = 0.8) {
+    const p = this._panner(x, y, z);
+    this._send(p, wet, 1);
+    return p;
+  }
+
+  // a burst of filtered noise; f: centre Hz, sweep: end factor
+  _burst(dest, t, f, q, dur, amp, sweep = 1) {
+    const s = this._noiseSrc();
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = q;
+    bp.frequency.setValueAtTime(f, t);
+    if (sweep !== 1) bp.frequency.exponentialRampToValueAtTime(f * sweep, t + dur);
+    const g = this.ctx.createGain();
+    this._env(g, t, Math.min(0.02, dur * 0.2), amp, dur);
+    s.connect(bp).connect(g).connect(dest);
+    s.start(t, Math.random() * 1.5, dur + 0.1);
+  }
+
+  scoop(o) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.01;
+    const p = this._at(o.x, 0.2, o.z, 0.4);
+    this._burst(p, t, 350 + Math.random() * 200, 2.5, 0.25, 0.35, 0.6);
+    const osc = this.ctx.createOscillator();
+    osc.frequency.setValueAtTime(140, t); osc.frequency.exponentialRampToValueAtTime(260, t + 0.12);
+    const g = this.ctx.createGain(); this._env(g, t, 0.01, 0.12, 0.15);
+    osc.connect(g).connect(p); osc.start(t); osc.stop(t + 0.2);
+  }
+
+  glug() {
+    if (!this.ctx) return;
+    const t0 = this.ctx.currentTime + 0.02;
+    for (let k = 0; k < 4; k++) {
+      const t = t0 + k * 0.11;
+      const o = this.ctx.createOscillator();
+      o.frequency.setValueAtTime(120 + k * 15, t); o.frequency.exponentialRampToValueAtTime(240 + k * 20, t + 0.07);
+      const g = this.ctx.createGain(); this._env(g, t, 0.01, 0.2, 0.08);
+      o.connect(g); this._send(g, 0.2, 1); o.start(t); o.stop(t + 0.12);
+    }
+  }
+
+  explode(e) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.01;
+    const p = this._at(e.x, 0.5, e.z, 1.0);
+    p.refDistance = 4;
+    this._burst(p, t, 900, 0.6, 0.3, 1.4, 0.15); // glass + iron
+    this._burst(p, t + 0.02, 220, 0.5, 1.6, 1.2, 0.6); // the whoomph
+    const s = this.ctx.createBufferSource(); s.buffer = this.brown;
+    const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160;
+    const g = this.ctx.createGain(); this._env(g, t, 0.03, 1.6, 1.4);
+    s.connect(lp).connect(g).connect(p); s.start(t, 0, 1.6);
+  }
+
+  barFall(d) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.05;
+    const p = this._at(d.x, 1.3, d.z, 1.0);
+    p.refDistance = 6; p.rolloffFactor = 0.6; // heard across the depth
+    for (const [dt, f] of [[0, 520], [0.35, 330], [0.6, 410]]) {
+      const o = this.ctx.createOscillator(); o.type = 'square';
+      o.frequency.value = f;
+      const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 12;
+      const g = this.ctx.createGain(); this._env(g, t + dt, 0.003, 0.4, 0.6);
+      o.connect(bp).connect(g).connect(p); o.start(t + dt); o.stop(t + dt + 0.7);
+    }
+    this.creak(d, 1.2);
+  }
+
+  rattle(d) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.01;
+    const p = this._at(d.x, 1.3, d.z, 0.6);
+    for (let k = 0; k < 3; k++) this._burst(p, t + k * 0.09, 300 + k * 60, 4, 0.08, 0.6);
+  }
+
+  creak(d, delay = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.05 + delay;
+    const p = this._at(d.x, 1.6, d.z, 1.0);
+    p.refDistance = 4;
+    const o = this.ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(70, t);
+    o.frequency.linearRampToValueAtTime(95, t + 0.8); o.frequency.linearRampToValueAtTime(60, t + 2.2);
+    const lfo = this.ctx.createOscillator(); lfo.frequency.value = 23;
+    const lg = this.ctx.createGain(); lg.gain.value = 9; lfo.connect(lg).connect(o.frequency);
+    const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 3;
+    const g = this.ctx.createGain(); this._env(g, t, 0.3, 0.35, 2.0);
+    o.connect(bp).connect(g).connect(p); o.start(t); lfo.start(t); o.stop(t + 2.4); lfo.stop(t + 2.4);
+  }
+
+  skitter(m) {
+    if (!this.ctx) return;
+    const t0 = this.ctx.currentTime + 0.01;
+    const p = this._at(m.x, 3, m.z, 0.6);
+    for (let k = 0; k < 9; k++) this._burst(p, t0 + k * 0.035 + Math.random() * 0.02, 2500 + Math.random() * 2000, 6, 0.02, 0.45);
+  }
+
+  flutter(m) {
+    const t = this.ctx.currentTime + 0.01;
+    const p = this._at(m.x, 2, m.z, 0.5);
+    const s = this._noiseSrc();
+    const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700; bp.Q.value = 1.2;
+    const am = this.ctx.createGain(); am.gain.value = 0;
+    const lfo = this.ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 18 + Math.random() * 8;
+    const lg = this.ctx.createGain(); lg.gain.value = 0.5; lfo.connect(lg).connect(am.gain);
+    const g = this.ctx.createGain(); this._env(g, t, 0.2, 0.8, 1.0);
+    s.connect(bp).connect(am).connect(g).connect(p);
+    s.start(t, Math.random(), 1.4); lfo.start(t); lfo.stop(t + 1.4);
+  }
+
+  kindleChord(s) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 1.2;
+    const p = this._at(s.x, 1.5, s.z, 1.2);
+    const base = s.type === 'echo' ? 98 : s.type === 'mural' ? 130.8 : 110;
+    for (const r of [1, 1.5, 2.0, 2.997]) {
+      const o = this.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = base * r;
+      const g = this.ctx.createGain(); this._env(g, t + r * 0.15, 0.6, 0.05, 3);
+      o.connect(g).connect(p); o.start(t + r * 0.15); o.stop(t + r * 0.15 + 3.8);
+    }
+  }
+
+  pageTurn() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.01;
+    const g = this.ctx.createGain(); g.gain.value = 0.7;
+    this._send(g, 0.3, 1);
+    this._burst(g, t, 3000, 0.7, 0.18, 0.25, 0.5);
   }
 
   // metallic clack when the shutters move

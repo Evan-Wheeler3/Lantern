@@ -66,6 +66,7 @@ export function createFlameMaterial() {
       uCream: shared.uCream,
       uFlicker: { value: 1 },
       uFlameGain: { value: 1 },
+      uLean: { value: 0 },
     },
     vertexShader: SHADERS.flameVert,
     fragmentShader: SHADERS.flameFrag,
@@ -123,6 +124,18 @@ export function createPortalMaterial() {
     uniforms: { uTime: shared.uTime, uEmber: shared.uEmber, uCream: shared.uCream, uOpen: { value: 0 } },
     vertexShader: SHADERS.portalVert,
     fragmentShader: SHADERS.portalFrag,
+  });
+}
+
+export function createOilMaterial() {
+  return new THREE.ShaderMaterial({
+    name: 'lk-oil',
+    uniforms: { ...shared, uFill: { value: 1 } },
+    vertexShader: SHADERS.oilVert,
+    fragmentShader: SHADERS.oilFrag,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
   });
 }
 

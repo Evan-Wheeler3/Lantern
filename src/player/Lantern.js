@@ -23,7 +23,7 @@ function setLayers(obj, ...layers) {
   });
 }
 
-function buildBody() {
+export function buildBody() {
   const P = [];
   const add = (g, o = IRON) => P.push(finalize(g, o));
   // bail handle (arched over the cap)
@@ -43,7 +43,7 @@ function buildBody() {
   return merge(P);
 }
 
-function buildPosts() {
+export function buildPosts() {
   const P = [];
   for (const x of [-0.052, 0.052]) {
     for (const z of [-0.052, 0.052]) {
@@ -64,7 +64,7 @@ function polyPath(cx, cy, n, r0, r1, rot = 0) {
   return p;
 }
 
-function buildShutterPanel() {
+export function buildShutterPanel() {
   // 0.1 x 0.16 punched-tin plate; local origin at the hinge edge. When the
   // shutters close, these holes are the only way out for the light: they glow
   // in view and project a star pattern through the shadow map.
@@ -122,6 +122,21 @@ function buildOffHand() {
   return merge(P);
 }
 
+// Leather oil sack, lumpy and heavy.
+function buildSack() {
+  const g = new THREE.SphereGeometry(0.11, 12, 10);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const k = 1 + 0.12 * Math.sin(x * 40 + y * 23) * Math.cos(z * 31) - (y > 0.06 ? (y - 0.06) * 3 : 0);
+    p.setXYZ(i, x * k, y * 1.15, z * k * 0.85);
+  }
+  const parts = [finalize(g, LEATHER)];
+  parts.push(finalize(new THREE.CylinderGeometry(0.025, 0.045, 0.06, 8).applyMatrix4(mat([0, 0.14, 0])), LEATHER));
+  parts.push(finalize(new THREE.TorusGeometry(0.03, 0.006, 4, 10).applyMatrix4(mat([0, 0.15, 0], [Math.PI / 2, 0, 0])), IRON));
+  return merge(parts);
+}
+
 export class Lantern {
   constructor(camera, events) {
     this.camera = camera;
@@ -129,20 +144,19 @@ export class Lantern {
     this.material = createWorldMaterial({ objectHatch: true, hatchScale: 5.0 });
     this.material.uniforms.uWetHeight.value = -10; // only per-vertex gloss on the viewmodel
 
-    this.root = new THREE.Group();     // follows the hand (bob, lag)
+    this.root = new THREE.Group();     // follows the hand (bob, lag, poses)
     this.pivot = new THREE.Group();    // the handle: lantern swings around this
     this.root.add(this.pivot);
     camera.add(this.root);
 
     const body = new THREE.Mesh(buildBody(), this.material);
     const posts = new THREE.Mesh(buildPosts(), this.material);
-    const hand = new THREE.Mesh(buildHand(), this.material);
+    this.hand = new THREE.Mesh(buildHand(), this.material);
     this.pivot.add(body, posts);
-    this.root.add(hand);
+    this.root.add(this.hand);
 
-    // Shutters: three pierced sliding plates. Wide glow = slid down out of the
-    // way (below the frame); focused beam = raised around the flame on the left,
-    // right and back so only the front window throws light.
+    // Shutters: three pierced sliding plates. Wide glow = slid down out of the way;
+    // focused beam = raised on the left, right and back (the back one is the star).
     const panel = buildShutterPanel();
     this.shutters = [];
     const mk = (pos, rotY) => {
@@ -152,11 +166,10 @@ export class Lantern {
       this.pivot.add(m);
       this.shutters.push({ mesh: m, base: pos[1] });
     };
-    mk([-0.056, -0.272, 0.05], Math.PI / 2);   // left: hinge edge at back, spans to front
-    mk([0.056, -0.272, -0.05], -Math.PI / 2);  // right
-    mk([-0.05, -0.272, 0.056], 0);             // back
+    mk([-0.056, -0.272, 0.05], Math.PI / 2);
+    mk([0.056, -0.272, -0.05], -Math.PI / 2);
+    mk([-0.05, -0.272, 0.056], 0);
 
-    // flame
     this.flameMaterial = createFlameMaterial();
     const fg = new THREE.PlaneGeometry(0.036, 0.075);
     fg.translate(0, 0.0375, 0);
@@ -166,18 +179,38 @@ export class Lantern {
     this.flame.frustumCulled = false;
     this.pivot.add(this.flame);
 
-    // The lantern body (cage, cap, shutters with their pierced stars) casts real
-    // shadows from the flame inside it; the hand does not.
     setLayers(this.root, LAYERS.VIEWMODEL);
     setLayers(this.pivot, LAYERS.VIEWMODEL, LAYERS.CAGE);
     setLayers(this.flame, LAYERS.FX);
 
     this.holdPos = new THREE.Vector3(0.2, -0.05, -0.5);
+    this.blastPos = new THREE.Vector3(0.0, 0.03, -0.44);   // right arm bent across: dead centre
+    this.stowPos = new THREE.Vector3(0.32, -0.62, -0.32);  // hung at the belt
     this.root.position.copy(this.holdPos);
     this.root.scale.setScalar(0.85);
 
-    // dynamics
-    this.swing = new THREE.Vector2();     // x: fore/aft, y: side
+    // off hand (blast) and the two-handed oil sack (gathering)
+    this.offHand = new THREE.Mesh(buildOffHand(), this.material);
+    this.offHand.layers.set(LAYERS.VIEWMODEL);
+    this.offHand.visible = false;
+    camera.add(this.offHand);
+    this.offRest = new THREE.Vector3(-0.3, -0.6, -0.3);
+    this.offActive = new THREE.Vector3(-0.035, -0.19, -0.34);
+
+    this.sackRig = new THREE.Group();
+    const sack = new THREE.Mesh(buildSack(), this.material);
+    const lh = new THREE.Mesh(buildOffHand(), this.material);
+    const rh = new THREE.Mesh(buildOffHand(), this.material);
+    lh.position.set(-0.11, 0.02, 0.02); lh.rotation.set(-1.1, 0.4, 0.9); lh.scale.set(0.9, 0.9, 0.9);
+    rh.position.set(0.11, 0.02, 0.02); rh.rotation.set(-1.1, -0.4, -0.9); rh.scale.set(-0.9, 0.9, 0.9);
+    this.sackRig.add(sack, lh, rh);
+    this.sackRig.position.set(0, -0.8, -0.4);
+    this.sackRig.visible = false;
+    setLayers(this.sackRig, LAYERS.VIEWMODEL);
+    camera.add(this.sackRig);
+
+    // dynamics / state
+    this.swing = new THREE.Vector2();
     this.swingVel = new THREE.Vector2();
     this.lag = new THREE.Vector2();
     this.focus = 0;
@@ -186,28 +219,28 @@ export class Lantern {
     this.flameWorld = new THREE.Vector3();
     this._tmp = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
+    this._q = new THREE.Quaternion();
 
-    // ---- off hand + fire meter ----
-    this.offHand = new THREE.Mesh(buildOffHand(), this.material);
-    this.offHand.layers.set(LAYERS.VIEWMODEL);
-    this.offHand.visible = false;
-    camera.add(this.offHand);
-    this.offRest = new THREE.Vector3(-0.28, -0.6, -0.3);
-    this.offActive = new THREE.Vector3(0.05, -0.2, -0.37);
-    this.offBlend = 0;
     this.fuel = 1;
     this.burnout = false;
     this.recover = 0;
     this.blasting = false;
-    this.blast = 0;          // smoothed 0..1 for visuals
+    this.blast = 0;        // smoothed visuals
+    this.pose = 0;         // 0 held at the side, 1 blast pose (centred, star out)
+    this.stow = 0;         // 0 in hand, 1 hung at the belt
+    this.offBlend = 0;
     this._regenWait = 0;
     this.hitDim = 1;
     this.extinguish = 0;
+    this.thrown = null;    // set by Firebomb: { lightPos: Vector3 } while the lantern is away
+    this.canBlast = true;
+    this.lean = 0;         // draft hint: flame tip lean (-1..1, screen space)
+
     events.on('pump', () => {
       if (this.burnout) this.recover = Math.min(1, this.recover + GAME.pumpBoost);
     });
-
     events.on('focusToggle', () => {
+      if (this.thrown || this.stow > 0.5) return;
       this.focusTarget = this.focusTarget > 0.5 ? 0 : 1;
       events.emit('focus', this.focusTarget);
     });
@@ -217,15 +250,21 @@ export class Lantern {
     return this.focusTarget > 0.5;
   }
 
-  update(dt, t, player, game) {
+  get inHand() {
+    return !this.thrown;
+  }
+
+  update(dt, t, player, game, ctx = {}) {
     const L = settings.light;
     const playing = !game || game.state === 'playing';
+    const stowWanted = !!ctx.collecting || !!ctx.priming;
+    const away = !!this.thrown;
 
     // ---- fire meter: blast drains, rest refills, empty = burnout ----
-    const wantBlast = playing && player.rightHeld && !this.burnout && this.extinguish === 0;
+    const wantBlast = playing && player.rightHeld && this.canBlast && !this.burnout && !away && this.extinguish === 0 && this.stow < 0.2 && !ctx.priming;
     this.blasting = wantBlast && this.fuel > 0;
     if (this.blasting) {
-      this.fuel = Math.max(0, this.fuel - dt * GAME.fuelDrain);
+      this.fuel = Math.max(0, this.fuel - dt / GAME.blastDuration);
       this._regenWait = GAME.fuelRegenDelay;
       if (this.fuel <= 0) {
         this.burnout = true;
@@ -247,86 +286,98 @@ export class Lantern {
     if (this.blasting !== this._wasBlasting) this.events.emit(this.blasting ? 'blastStart' : 'blastEnd', {});
     this._wasBlasting = this.blasting;
     this.blast += ((this.blasting ? 1 : 0) - this.blast) * (1 - Math.exp(-dt * (this.blasting ? 18 : 6)));
+    this.pose += ((this.blasting ? 1 : 0) - this.pose) * (1 - Math.exp(-dt * (this.blasting ? 14 : 7)));
+    this.stow += ((stowWanted && !away ? 1 : 0) - this.stow) * (1 - Math.exp(-dt * 9));
 
-    // hits dim the flame; death puts it out
     const hits = game ? game.hits : 0;
     const targetDim = [1, 0.8, 0.64, 0.5][Math.min(hits, 3)];
     this.hitDim += (targetDim - this.hitDim) * (1 - Math.exp(-dt * 3));
     if (game && game.state === 'dead') this.extinguish = Math.min(1, this.extinguish + dt / 1.4);
 
-    // ---- flicker: layered noise + occasional gutter ----
+    // ---- flicker ----
     const sp = L.flickerSpeed;
     const tt = t * sp;
     const n = 0.5 * n1(tt * 1.9, 1) + 0.3 * n1(tt * 4.7, 2) + 0.2 * n1(tt * 11.3, 3);
     const gut = n1(tt * 0.23, 4);
     const gutter = THREE.MathUtils.smoothstep(gut, 0.72, 0.92) * (0.55 + 0.45 * n1(tt * 22, 5));
     let f = 1 + L.flicker * ((n - 0.5) * 0.75 - gutter * 0.45);
-    // lower flicker in the focused beam (shuttered flame is sheltered)
     f = THREE.MathUtils.lerp(f, 1 + (f - 1) * 0.5, this.focus);
-    if (this.burnout) f *= 0.45 + 0.4 * n1(tt * 9.0, 9) + 0.15 * n1(tt * 31.0, 10); // sputtering wick
+    if (this.burnout) f *= 0.45 + 0.4 * n1(tt * 9.0, 9) + 0.15 * n1(tt * 31.0, 10);
     if (this.blast > 0.01) f = THREE.MathUtils.lerp(f, 1.15 + 0.25 * n1(tt * 40.0, 11), this.blast);
     this.flicker = f;
 
     // ---- focus (shutters) ----
     const fr = 1 - Math.exp(-dt * 5);
-    const focusGoal = this.blasting ? 1 : this.burnout ? 0 : this.focusTarget;
+    const focusGoal = this.blasting ? 1 : (this.burnout || this.stow > 0.3 || away) ? 0 : this.focusTarget;
     this.focus += (focusGoal - this.focus) * (this.blasting ? 1 - Math.exp(-dt * 14) : fr);
     const fe = this.focus * this.focus * (3 - 2 * this.focus);
     for (const s of this.shutters) {
       s.mesh.position.y = s.base - (1 - fe) * 0.175;
       s.mesh.visible = fe > 0.02;
-      // Only closed plates (with their pierced stars) throw shadows into the room.
       if (fe > 0.6) s.mesh.layers.enable(LAYERS.CAGE);
       else s.mesh.layers.disable(LAYERS.CAGE);
     }
 
-    // ---- sway: damped pendulum driven by look + acceleration ----
+    // ---- sway ----
     const sw = settings.player.sway;
     const k = 38, c = 3.2;
-    const driveSide = player.yawRate * 1.1 - player.accelLocal.x * 0.35;
-    const driveFore = -player.pitchRate * 0.6 + player.accelLocal.z * 0.35;
+    const steady = 1 - 0.8 * this.pose; // the bent arm braces the lantern
+    const driveSide = (player.yawRate * 1.1 - player.accelLocal.x * 0.35) * steady;
+    const driveFore = (-player.pitchRate * 0.6 + player.accelLocal.z * 0.35) * steady;
     this.swingVel.x += (-k * this.swing.x - c * this.swingVel.x + driveFore * sw * 6) * dt;
     this.swingVel.y += (-k * this.swing.y - c * this.swingVel.y + driveSide * sw * 6) * dt;
     this.swing.x = THREE.MathUtils.clamp(this.swing.x + this.swingVel.x * dt, -0.6, 0.6);
     this.swing.y = THREE.MathUtils.clamp(this.swing.y + this.swingVel.y * dt, -0.6, 0.6);
-    this.pivot.rotation.set(this.swing.x + Math.sin(t * 0.9) * 0.015 * sw, 0, this.swing.y + Math.sin(t * 0.7 + 1) * 0.02 * sw);
+    const pe = this.pose * this.pose * (3 - 2 * this.pose);
+    // blast pose: the lantern turns on its bail so the star plate faces forward
+    this.pivot.rotation.set(this.swing.x + Math.sin(t * 0.9) * 0.015 * sw, Math.PI * pe, this.swing.y + Math.sin(t * 0.7 + 1) * 0.02 * sw);
 
-    // hand lags behind the look and counter-bobs
     const lr = 1 - Math.exp(-dt * 8);
     this.lag.x += (THREE.MathUtils.clamp(-player.yawRate * 0.018, -0.08, 0.08) - this.lag.x) * lr;
     this.lag.y += (THREE.MathUtils.clamp(player.pitchRate * 0.012, -0.05, 0.05) - this.lag.y) * lr;
     const b = player.bob;
+    const se = this.stow * this.stow * (3 - 2 * this.stow);
+    this._tmp.copy(this.holdPos).lerp(this.blastPos, pe).lerp(this.stowPos, se);
     this.root.position.set(
-      this.holdPos.x + this.lag.x * sw - b.x * 0.4,
-      this.holdPos.y + this.lag.y * sw - b.y * 0.5 + Math.sin(t * 1.3) * 0.003,
-      this.holdPos.z + this.focus * 0.06,
+      this._tmp.x + this.lag.x * sw - b.x * 0.4,
+      this._tmp.y + this.lag.y * sw - b.y * 0.5 + Math.sin(t * 1.3) * 0.003 + (this.blast > 0.5 ? (Math.random() - 0.5) * 0.003 : 0),
+      this._tmp.z + this.focus * 0.06 * (1 - pe),
     );
-    this.root.rotation.set(0, -this.lag.x * 1.5, this.lag.x * 0.8);
+    this.root.rotation.set(-0.15 * pe, -this.lag.x * 1.5, this.lag.x * 0.8 + 0.25 * pe);
+    this.root.visible = !away && se < 0.98;
 
     // ---- drive the light ----
     this.camera.updateMatrixWorld(true);
-    this.flame.getWorldPosition(this.flameWorld);
+    if (away) {
+      this.flameWorld.copy(this.thrown.lightPos);
+    } else {
+      this.flame.getWorldPosition(this.flameWorld);
+    }
     const j = L.jitter;
     this._tmp.set((n1(tt * 3.1, 6) - 0.5) * 2 * j, (n1(tt * 2.3, 7) - 0.5) * j + 0.025, (n1(tt * 2.7, 8) - 0.5) * 2 * j);
-    // beam follows the lantern body (so it swings), biased to where you look
-    this._fwd.set(0, -0.06, -1).applyQuaternion(this.pivot.getWorldQuaternion(new THREE.Quaternion())).normalize();
-    shared.uSpotDir.value.copy(this._fwd);
-    // the blast throws the light forward with the fire
-    shared.uLightPos.value.copy(this.flameWorld).add(this._tmp).addScaledVector(this._fwd, this.blast * 0.45);
+    // beam leaves through the front window normally, through the star in the blast pose
+    const zl = THREE.MathUtils.lerp(-1, 1, pe);
+    this._fwd.set(0, -0.06, Math.abs(zl) < 0.2 ? Math.sign(zl || 1) * 0.2 : zl);
+    this._fwd.applyQuaternion(this.pivot.getWorldQuaternion(this._q)).normalize();
+    if (!away) shared.uSpotDir.value.copy(this._fwd);
+    shared.uLightPos.value.copy(this.flameWorld).add(this._tmp).addScaledVector(shared.uSpotDir.value, this.blast * 0.45);
 
     const intensity = THREE.MathUtils.lerp(L.intensity, L.focusIntensity, fe);
-    const life = this.hitDim * (1 - this.extinguish) * (this.burnout ? 0.38 : 1) * (1 + 0.6 * this.blast);
+    const life = this.hitDim * (1 - this.extinguish) * (this.burnout ? 0.38 : 1) * (1 + 0.6 * this.blast) * (1 - 0.72 * se);
     shared.uLightIntensity.value = intensity * f * life;
-    shared.uLightRange.value = THREE.MathUtils.lerp(L.range, L.focusRange, fe) * (this.burnout ? 0.6 : 1) * (0.6 + 0.4 * this.hitDim);
+    shared.uLightRange.value = THREE.MathUtils.lerp(L.range, L.focusRange, fe) * (this.burnout ? 0.6 : 1) * (0.6 + 0.4 * this.hitDim) * (1 - 0.45 * se);
     shared.uFocus.value = fe;
 
     const heat = THREE.MathUtils.clamp(0.4 + (f - 1) * 1.2 + this.blast, 0, 1);
     shared.uLightColor.value.copy(paletteLinear.ember).lerp(paletteLinear.cream, heat);
-    this.flameMaterial.uniforms.uFlicker.value = THREE.MathUtils.clamp((f - 0.55) / 0.7, 0, 1);
-    this.flameMaterial.uniforms.uFlameGain.value = (1 - this.extinguish) * (this.burnout ? 0.55 : 1) * (1 + this.blast * 0.8);
-    this.flame.scale.set(1 + this.blast * 0.3, (1 + this.blast * 0.6) * (this.burnout ? 0.6 : 1), 1);
+    const fu = this.flameMaterial.uniforms;
+    fu.uFlicker.value = THREE.MathUtils.clamp((f - 0.55) / 0.7, 0, 1);
+    // centred in the blast pose: keep the flame from blooming over the star
+    fu.uFlameGain.value = (1 - this.extinguish) * (this.burnout ? 0.55 : 1) * (1 - this.blast * 0.45);
+    if (fu.uLean) fu.uLean.value += (this.lean - fu.uLean.value) * (1 - Math.exp(-dt * 2));
+    this.flame.scale.set(1 + this.blast * 0.15, (1 + this.blast * 0.25) * (this.burnout ? 0.6 : 1), 1);
 
-    // off hand: rises in, palm thrust toward the lantern, trembling with the effort
+    // ---- off hand: rises behind the lantern, palm out ----
     this.offBlend += ((this.blasting ? 1 : 0) - this.offBlend) * (1 - Math.exp(-dt * (this.blasting ? 16 : 7)));
     const ob = this.offBlend;
     this.offHand.visible = ob > 0.01;
@@ -334,7 +385,16 @@ export class Lantern {
       this.offHand.position.lerpVectors(this.offRest, this.offActive, ob);
       this.offHand.position.x += (Math.random() - 0.5) * 0.004 * this.blast;
       this.offHand.position.y += (Math.random() - 0.5) * 0.004 * this.blast - b.y * 0.4;
-      this.offHand.rotation.set(0.15 - 0.3 * ob, -0.75 * ob - 0.2, 0.25 * (1 - ob));
+      this.offHand.rotation.set(0.1 - 0.25 * ob, 0.25 * ob - 0.2 * (1 - ob), 0.25 * (1 - ob));
+    }
+
+    // ---- the oil sack, both hands ----
+    const sackGoal = ctx.collecting ? 1 : ctx.priming ? 0.6 : 0;
+    const sb = (this._sack = (this._sack || 0) + (sackGoal - (this._sack || 0)) * (1 - Math.exp(-dt * 8)));
+    this.sackRig.visible = sb > 0.02;
+    if (this.sackRig.visible) {
+      this.sackRig.position.set(0, -0.8 + 0.45 * sb - b.y * 0.3, -0.42);
+      this.sackRig.rotation.set(0.35 + Math.sin(t * 7) * 0.06 * (ctx.collecting ? 1 : 0), 0, Math.sin(t * 3.5) * 0.05);
     }
   }
 }

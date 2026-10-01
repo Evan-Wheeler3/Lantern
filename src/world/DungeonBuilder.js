@@ -13,7 +13,7 @@ const WALL_T = 0.6;
 const MAX_RUN = 8;
 const VAULT_F = 0.7;
 
-export function buildDungeon(dg) {
+export function buildDungeon(dg, { oilSpills = 7 } = {}) {
   const rand = mulberry32(dg.seed * 7 + 3);
   const parts = [];
   const add = (g, opts) => parts.push(finalize(g, opts));
@@ -22,8 +22,11 @@ export function buildDungeon(dg) {
     walkables: [],
     drips: [],
     chains: [],
-    beaconFires: [],   // per beacon index: { pos, room, kind }
-    door: null,
+    beaconFires: [],   // per beacon index: { pos, room, kind, walls }
+    door: null,        // legacy portal door (only when no sanctum fits)
+    greatDoor: null,   // the wooden door into the sanctum
+    sanctum: null,     // { lectern:{x,z,rot}, well:{x,z} }
+    oil: [],           // spills: { x, z, amount }
   };
   const C = out.colliders;
   const W = dg.W, H = dg.H;
@@ -174,7 +177,24 @@ export function buildDungeon(dg) {
   }
 
   // ------------------------------------------------------------------ rooms
-  for (const room of dg.rooms) dressRoom(dg, room, add, rand, out);
+  for (const room of dg.rooms) {
+    if (room.isSanctum) dressSanctum(dg, room, add, rand, out);
+    else dressRoom(dg, room, add, rand, out);
+  }
+
+  // ------------------------------------------------------------------ oil: tipped urns bleeding into the water
+  const spillRooms = dg.rooms.filter((r) => !r.isSanctum);
+  for (let k = 0, tries = 0; k < oilSpills && tries < oilSpills * 30; tries++) {
+    const r = spillRooms[Math.floor(rand() * spillRooms.length)];
+    const x = r.cx + (rand() - 0.5) * (r.w - 3), z = r.cz + (rand() - 0.5) * (r.d - 3);
+    if (Math.hypot(x - r.cx, z - r.cz) < 2.8) continue;
+    if (out.oil.some((o) => Math.hypot(o.x - x, o.z - z) < 4)) continue;
+    if (out.colliders.circles.some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 1.2)) continue;
+    const a = rand() * Math.PI * 2;
+    urn(add, x + Math.cos(a) * 0.9, z + Math.sin(a) * 0.9, a + Math.PI, rand);
+    out.oil.push({ x, z, amount: 10 + Math.round(rand() * 10) });
+    k++;
+  }
 
   return { geometries: mergeChunked(parts, 9), ...out };
 }
@@ -194,6 +214,41 @@ function solidSides(dg, room) {
   ];
   for (const s of sides) if (check(s.cells)) res.push(s);
   return res;
+}
+
+// A tipped, cracked oil urn.
+function urn(add, x, z, rot, rand) {
+  const prof = [[0.0, 0], [0.22, 0.02], [0.32, 0.25], [0.3, 0.55], [0.16, 0.75], [0.12, 0.85], [0.16, 0.9]].map(([r, y]) => new THREE.Vector2(r, y));
+  const g = new THREE.LatheGeometry(prof, 10);
+  g.translate(0, -0.45, 0);
+  add(g, { tone: 0.62, gloss: 0.55, flat: true, matrix: mat([x, 0.12, z], [Math.PI / 2 - 0.15, rot, 0]) });
+  add(new THREE.DodecahedronGeometry(0.12, 0), { ...STONE, flat: true, matrix: mat([x + (rand() - 0.5) * 0.8, 0.02, z + (rand() - 0.5) * 0.8], [rand(), rand(), rand()]) });
+}
+
+// The small chamber behind the great door: a lectern with the chapter's page and
+// the well that leads down to the next depth.
+function dressSanctum(dg, room, add, rand, out) {
+  const d = dg.sanctum.door;
+  const C = out.colliders;
+  // far wall is opposite the door
+  const depth = d.nx !== 0 ? room.w : room.d;
+  const fx = room.cx - d.nx * (depth / 2 - 1.0), fz = room.cz - d.nz * (depth / 2 - 1.0);
+  const rot = Math.atan2(d.nx, d.nz);
+  // lectern
+  add(new THREE.CylinderGeometry(0.12, 0.2, 1.0, 6), { ...STONE, flat: true, matrix: mat([fx, 0.3, fz]) });
+  add(new THREE.BoxGeometry(0.7, 0.08, 0.5), { tone: 0.5, gloss: 0.6, matrix: mat([fx, 0.84, fz], [-0.35, rot, 0]) });
+  add(new THREE.BoxGeometry(0.55, 0.04, 0.38), { tone: 0.95, gloss: 0.05, matrix: mat([fx, 0.9, fz], [-0.35, rot, 0]) });
+  C.circles.push({ x: fx, z: fz, r: 0.45 });
+  // the well: a stone ring sunk in the water, its shaft glowing once you may descend
+  const wx = room.cx + d.nx * 0.9, wz = room.cz + d.nz * 0.9;
+  add(new THREE.TorusGeometry(0.95, 0.18, 6, 18), { ...STONE, flat: true, matrix: mat([wx, 0.08, wz], [Math.PI / 2, 0, 0]) });
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    add(new THREE.BoxGeometry(0.35, 0.25, 0.3), { ...STONE, flat: true, matrix: mat([wx + Math.cos(a) * 1.05, 0.12, wz + Math.sin(a) * 1.05], [0, -a, 0]), disp: 0.02 });
+  }
+  C.circles.push({ x: wx, z: wz, r: 1.15 });
+  out.sanctum = { lectern: { x: fx, z: fz, rot }, well: { x: wx, z: wz } };
+  out.drips.push({ x: room.cx, y: room.ceil - 0.1, z: room.cz, period: 3 });
 }
 
 function dressRoom(dg, room, add, rand, out) {
@@ -344,8 +399,18 @@ function dressRoom(dg, room, add, rand, out) {
     keepClear.push([cx, cz, 2.5]);
   }
 
-  // exit door on an unbroken wall
-  if (room.isExit) {
+  if (room.beacon) out.beaconFires[room.beacon.index].walls = solidSides(dg, room);
+
+  // the great wooden door into the sanctum (geometry is dynamic, see Doors.js)
+  if (room.isExit && dg.sanctum) {
+    const d = dg.sanctum.door;
+    out.greatDoor = { ...d };
+    // a cleared apron so nothing blocks the door
+    keepClear.push([d.x + d.nx * 2, d.z + d.nz * 2, 3]);
+  }
+
+  // legacy portal door on an unbroken wall (only if no sanctum could be carved)
+  if (room.isExit && !dg.sanctum) {
     const sides = solidSides(dg, room);
     const s = sides[0] || { nx: 0, nz: 1, x: cx, z: cz - d / 2 };
     const along = s.nx === 0;

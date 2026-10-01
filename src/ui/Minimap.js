@@ -5,9 +5,11 @@ const PAL = { ink: '#07060A', oil: '#1A1210', ember: '#FF8A1F', cream: '#FFE2B0'
 const PX = 3; // pixels per cell on the offscreen map
 
 export class Minimap {
-  constructor(dungeon, events, beacons) {
+  constructor(dungeon, events, beacons, doors = null, oil = null) {
     this.dg = dungeon;
     this.beacons = beacons;
+    this.doors = doors;
+    this.oil = oil;
     this.revealed = new Uint8Array(dungeon.W * dungeon.H);
     this.litRooms = new Set();
     this.off = document.createElement('canvas');
@@ -85,11 +87,19 @@ export class Minimap {
       c.moveTo(x, y - s * 1.4); c.lineTo(x + s, y); c.lineTo(x, y + s * 1.4); c.lineTo(x - s, y); c.closePath();
       if (b.lit) { c.fillStyle = PAL.cream; c.fill(); } else { c.strokeStyle = PAL.ember; c.lineWidth = Math.max(1, scale * 0.6); c.stroke(); }
     }
-    const d = this.beacons.door;
+    if (this.oil) {
+      c.fillStyle = PAL.ember;
+      for (const o of this.oil.list) {
+        if (o.left <= 0 || !this.revealed[dg.idx(dg.toI(o.x), dg.toJ(o.z))]) continue;
+        const [x, y] = toPx(o.x, o.z);
+        c.beginPath(); c.arc(x, y, 1.3 * scale, 0, Math.PI * 2); c.fill();
+      }
+    }
+    const d = this.doors?.door;
     if (d && this.revealed[dg.idx(dg.toI(d.x + d.nx * 1.5), dg.toJ(d.z + d.nz * 1.5))]) {
       const [x, y] = toPx(d.x, d.z);
       const s = 2.6 * scale;
-      c.fillStyle = this.beacons.doorUnsealed ? PAL.cream : PAL.oil;
+      c.fillStyle = this.doors.unlocked ? PAL.cream : PAL.oil;
       c.strokeStyle = PAL.ember;
       c.lineWidth = Math.max(1, scale * 0.6);
       c.beginPath(); c.rect(x - s, y - s, s * 2, s * 2); c.fill(); c.stroke();

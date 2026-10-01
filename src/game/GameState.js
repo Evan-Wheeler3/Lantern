@@ -16,6 +16,7 @@ export class GameState {
     this.kills = 0;
     this.time = 0;
     this.messages = []; // { text, t } for the HUD
+    this.paused = false; // a story plate is open
 
     events.on('playerHit', () => {
       if (this.state !== 'playing' || this.invuln > 0) return;
@@ -29,18 +30,18 @@ export class GameState {
     events.on('beaconLit', ({ count, total }) => {
       this.lit = count;
       if (this.hits > 0) this.hits--;
-      this.say(count < total ? `Beacon kindled — ${count} of ${total}` : 'Every beacon burns. The seal is breaking.');
+      this.say(count < total ? `Beacon kindled — ${count} of ${total}` : 'Every beacon burns.');
     });
-    events.on('allLit', () => this.say('Find the opened door.', 3.5));
+    events.on('storyWake', ({ title }) => this.say(title, 3.2));
     events.on('monsterKilled', () => { this.kills++; });
     events.on('escaped', () => this.end('won'));
     events.on('burnout', () => this.say('Burnt out — mash SPACE to pump the oil', 2.2));
   }
 
-  start() {
+  start(text) {
     if (this.state !== 'title') return;
     this.state = 'playing';
-    this.say(`Kindle the ${this.total} beacons. Then find the way out.`, 5);
+    this.say(text || `Kindle the ${this.total} beacons.`, 5);
   }
 
   end(result) {
@@ -55,7 +56,7 @@ export class GameState {
   }
 
   update(dt) {
-    if (this.state === 'playing') this.time += dt;
+    if (this.state === 'playing' && !this.paused) this.time += dt;
     this.invuln = Math.max(0, this.invuln - dt);
     this.hurt = Math.max(0, this.hurt - dt * 1.4);
     if (this.state === 'dead') this.fade = Math.min(0.92, this.fade + dt / 2.5);

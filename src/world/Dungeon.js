@@ -28,6 +28,7 @@ export class Dungeon {
     this.rooms = [];
     this.edges = [];
     this.corridors = []; // straight segments {a:[i,j], b:[i,j]}
+    this.sanctum = null;
     this._generate(roomCount, beaconCount);
   }
 
@@ -125,23 +126,86 @@ export class Dungeon {
     start.isStart = true;
     const hops = this._hops(start.id);
     this.hops = hops;
+    // Exit = the farthest room that has space behind one of its walls for the
+    // sanctum (the small chamber beyond the great door).
+    const cands = rs.filter((r) => r !== start)
+      .sort((a, b) => (hops[b.id] * 100 + dist(b, start)) - (hops[a.id] * 100 + dist(a, start)));
     let exit = null;
-    for (const r of rs) {
-      if (r === start) continue;
-      const score = hops[r.id] * 100 + dist(r, start);
-      if (!exit || score > exit.score) exit = { r, score };
+    for (const r of cands) {
+      const sanct = this._placeSanctum(r);
+      if (sanct) { exit = r; this.sanctum = sanct; break; }
     }
-    exit.r.isExit = true;
+    if (!exit) exit = cands[0];
+    exit.isExit = true;
     this.start = start;
-    this.exit = exit.r;
+    this.exit = exit;
 
     // Beacons: spread over the remaining rooms, preferring farther ones.
-    const pool = rs.filter((r) => !r.isStart && !r.isExit).sort((a, b) => hops[b.id] - hops[a.id] || R() - 0.5);
+    const pool = rs.filter((r) => !r.isStart && !r.isExit && r.kind !== 'sanctum').sort((a, b) => hops[b.id] - hops[a.id] || R() - 0.5);
     const picks = [];
     const step = pool.length / Math.min(beaconCount, pool.length);
     for (let k = 0; k < Math.min(beaconCount, pool.length); k++) picks.push(pool[Math.floor(k * step)]);
     picks.forEach((r, k) => { r.beacon = { index: k }; });
     this.beaconRooms = picks;
+  }
+
+  // Try to carve a 6x5 sanctum one wall-thickness beyond a side of `room`,
+  // joined by a 3-cell doorway. Returns {room, door:{i,j,axis,x,z,nx,nz}} or null.
+  _placeSanctum(room) {
+    const SW = 6, SD = 7, GAP = 1;
+    const sides = [
+      { nx: 0, nz: -1 }, { nx: 0, nz: 1 }, { nx: -1, nz: 0 }, { nx: 1, nz: 0 },
+    ];
+    for (const s of sides) {
+      let i0, j0, w, d;
+      const mi = room.i0 + Math.floor(room.w / 2), mj = room.j0 + Math.floor(room.d / 2);
+      if (s.nz !== 0) {
+        w = SW; d = SD;
+        i0 = mi - Math.floor(SW / 2);
+        j0 = s.nz < 0 ? room.j0 - GAP - SD : room.j0 + room.d + GAP;
+      } else {
+        w = SD; d = SW;
+        j0 = mj - Math.floor(SW / 2);
+        i0 = s.nx < 0 ? room.i0 - GAP - SD : room.i0 + room.w + GAP;
+      }
+      // the sanctum plus a 1-cell margin must be untouched rock (doorway row aside)
+      let ok = i0 > 2 && j0 > 2 && i0 + w < this.W - 2 && j0 + d < this.H - 2;
+      for (let j = j0 - 1; ok && j <= j0 + d; j++) {
+        for (let i = i0 - 1; ok && i <= i0 + w; i++) {
+          const inGap = s.nz !== 0 ? (j === (s.nz < 0 ? j0 + d : j0 - 1)) : (i === (s.nx < 0 ? i0 + w : i0 - 1));
+          if (inGap && Math.abs((s.nz !== 0 ? i - mi : j - mj)) <= 1) continue;
+          if (this.grid[this.idx(i, j)] !== SOLID) ok = false;
+        }
+      }
+      // the doorway cells in the room wall row must also be rock (not a hallway)
+      if (!ok) continue;
+      const sid = this.rooms.length;
+      const sanct = {
+        id: sid, kind: 'sanctum', i0, j0, w, d, ceil: 4.6,
+        cx: this.cellX(i0) - 0.5 + w / 2, cz: this.cellZ(j0) - 0.5 + d / 2,
+        longAxis: w >= d ? 'x' : 'z', links: [room.id], beacon: null, isStart: false, isExit: false, isSanctum: true,
+      };
+      this.rooms.push(sanct);
+      for (let j = j0; j < j0 + d; j++) for (let i = i0; i < i0 + w; i++) {
+        const id = this.idx(i, j);
+        this.grid[id] = ROOM; this.roomOf[id] = sid; this.ceil[id] = 4.6;
+      }
+      // doorway: 3 cells through the wall row
+      const cells = [];
+      for (let o = -1; o <= 1; o++) {
+        const ci = s.nz !== 0 ? mi + o : (s.nx < 0 ? i0 + w : i0 - 1);
+        const cj = s.nz !== 0 ? (s.nz < 0 ? j0 + d : j0 - 1) : mj + o;
+        const id = this.idx(ci, cj);
+        this.grid[id] = CORRIDOR; this.ceil[id] = 4.2;
+        cells.push([ci, cj]);
+      }
+      const [ci, cj] = cells[1];
+      // door sits on the room-side face of the doorway
+      const x = s.nz !== 0 ? this.cellX(ci) : this.cellX(ci) + (s.nx < 0 ? 0.5 : -0.5);
+      const z = s.nz !== 0 ? this.cellZ(cj) + (s.nz < 0 ? 0.5 : -0.5) : this.cellZ(cj);
+      return { room: sanct, door: { x, z, nx: -s.nx, nz: -s.nz, width: 3, cells } };
+    }
+    return null;
   }
 
   _hops(from) {

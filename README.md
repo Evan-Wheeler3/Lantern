@@ -1,11 +1,14 @@
 # Lanternkeeper — "Ink and Ember"
 
-A first-person descent through a drowned, procedurally generated undercroft, lit only by the lantern
-in your hand and rendered like a woodcut print.
+A first-person descent through drowned, procedurally built undercrofts, lit only by the lantern in
+your hand and rendered like a woodcut print.
 
-**Objective:** kindle the 5 dead beacons scattered through the rooms. When the last one catches, the
-sealed door unseals: find it and walk out. Shadow creatures hunt you in the dark between the beacons.
-Three touches and your flame goes out.
+In the town above, people walk into the flood in their sleep. Your master went down after them and
+never came back; his lantern did. Last night your brother walked into the water. Take the lantern down.
+
+**Each depth:** kindle the dead beacons (each wakes a piece of the story), gather spilled oil, and when
+the last beacon catches the great wooden door unbars. Find it (your flame leans toward it), read what
+was left behind it, and descend through the well.
 
 ![Hunted](docs/screenshots/01_hunted.png)
 
@@ -32,41 +35,55 @@ Use a desktop browser with WebGL2 (Chrome, Edge, Firefox, Safari 16+). The rende
 
 | Input | Action |
 |-------|--------|
-| Click | Take up the lantern (pointer lock + audio) and begin |
 | **W A S D** / arrows | Wade |
 | **Shift** | Hurry |
 | Mouse | Look |
 | **Left click** / **F** | Shutter the lantern: focused beam ⟷ wide glow |
-| **Right click** (hold) | Off-hand blast: drive fire through the lantern |
+| **E** (hold) | Kindle a beacon · gather oil · open the great door · read · descend · pick up a thrown lantern |
+| **Right click** (hold) | Star blast *(learned at depth 2)* |
 | **Space** (mash) | Pump oil into a burnt-out lantern |
-| **E** (hold) | Kindle a beacon |
+| **Q** (hold, release) | Firebomb *(learned at depth 3)* |
 | **M** (hold) | Full map |
 | Esc | Release the mouse |
 
 ## How it plays
 
-* **Wide glow** slows the shadows. The **focused beam** holds them still and *charges* them: an
-  ember outline and hatching burn into the body, getting thicker the longer you hold it. At full
-  charge they **freeze for 5 seconds** (white-hot cross-hatching) even after the beam leaves them.
-* **Fire blast** (right click) burns any shadow in a short cone in front of you; frozen ones burn
-  faster. It forces the light into the beam and drains the fire meter (about 1 second from full). Run it
-  dry and the lantern **burns out**: dim, no beam or blast for ~4 s, or less if you mash Space.
-* **Beacons** become permanent room lights and sanctuaries. Shadows will not enter a kindled room,
-  and kindling one restores one lost flame.
-* **Minimap** (top right) reveals what your lantern has seen; kindled rooms are gilded.
-* Every run is a new seed. The end card offers a new descent or the same dark again.
+* **The shrine** (the start screen) is between depths. It shows your oil, the depths you can enter
+  and the upgrade shop. Each new depth charges a **toll in oil**. Cleared depths are free, and every
+  depth always has the same layout, so you can go back and gather oil.
+* **Oil is the only resource.** Find spilled oil by its faint ember rings and hold **E** to scoop it.
+  That takes both hands, so the lantern goes to your belt and the dark closes in. **Dying loses the
+  oil you gathered on that descent**; escaping carries it home.
+* **Beam:** the wide glow slows shadows. The focused beam holds them still and engraves fire into
+  them; at full charge they **freeze for 5 s**.
+* **Star blast** *(depth 2)*: the lantern swings to the centre, turns its star plate forward, and your
+  open palm drives a five-pointed jet of fire through it, about **2 s** from a full meter. It burns
+  everything in front of you, frozen shadows fastest. Run it dry and the wick gutters: mash **Space**.
+* **Firebomb** *(depth 3)*: costs 6 oil. Douse the lantern, draw back with an arc guide, throw. It
+  bursts into a pool of burning oil that lights the room and burns shadows. The iron lantern
+  survives, but you're in the dark until you walk into the fire and take it back.
+* **Beacons** make their room permanently lit and safe, restore a lost flame, and wake a piece of the
+  story: a **mural** surfacing from the stone, an **echo** of shadow keepers replaying a moment, or a
+  **dead keeper** with a journal page.
+* **Shadows:**
+  * *stalkers* and *hounds* hunt along the ground.
+  * *Moths* (depth 3) ignore the beam's grip and are **drawn to it**, and to burning oil.
+  * *Ceiling crawlers* (depth 4) cling to vaults; watch for drips. They drop when you pass beneath.
+* **Upgrades** cost oil: blast heat, reach and breath; beam reach and grip; firebomb radius.
 
 ## URL parameters
 
 | Param | Example | Effect |
 |-------|---------|--------|
-| `seed` | `?seed=1234` | Replay a specific dungeon |
+| `round` | `?round=2&free=1` | Jump straight into a depth (`free=1` skips the toll; for testing) |
 | `quality` | `?quality=Low` | Low preset (lower resolution, cheaper shadows/fog) |
 | `dev` | `?dev=1` | Look-dev panel (every style slider, copy JSON) + FPS counter |
 | `cam` / `focus` / `play` / `overlay` | `?cam=0,-0.22,0,0,0&play=1&overlay=0` | Testing / screenshots |
 
-The style is locked to the defaults in `src/core/Settings.js`. The look-dev panel is still there
-behind `?dev=1` if you want to tune it. Gameplay numbers live in `src/core/GameConfig.js`.
+The style is locked to the defaults in `src/core/Settings.js` (look-dev panel behind `?dev=1`).
+Gameplay numbers live in `src/core/GameConfig.js`, depths, tolls, monster mixes and upgrade prices
+in `src/data/rounds.js`, and all story text in **`src/data/story.js`**. Progress is saved in the
+browser; "forget everything" on the shrine screen resets it.
 
 ## Documents
 

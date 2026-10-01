@@ -106,3 +106,88 @@ export function buildMourner() {
   add(drape);
   return merge(P);
 }
+
+// Moth: a narrow body and two broad, ragged wings (separate geometries so they
+// can flap). Wings are built in +X; mirror for the other side. Faces +Z.
+export function buildMoth() {
+  const rand = mulberry32(91);
+  const B = [];
+  const add = (g) => B.push(finalize(g, C));
+  add(ball([0, 0, 0], 0.16, 0.8, 0.8, 2.4, 10));            // thorax/abdomen along z
+  add(ball([0, 0.02, 0.36], 0.09, 1, 1, 1.1, 8));            // head
+  for (const s of [-1, 1]) {
+    add(limb([s * 0.03, 0.06, 0.42], [s * 0.18, 0.28, 0.62], 0.012, 0.003, 4)); // antennae
+    add(limb([s * 0.18, 0.28, 0.62], [s * 0.3, 0.3, 0.6], 0.004, 0.002, 4));
+  }
+  const body = merge(B);
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0.12);
+  const pts = [[0.35, 0.35], [0.75, 0.42], [1.05, 0.25], [1.12, 0.0], [0.95, -0.25], [0.7, -0.5], [0.45, -0.62], [0.2, -0.45], [0, -0.15]];
+  for (const [x, y] of pts) shape.lineTo(x * (0.95 + rand() * 0.1), y * (0.95 + rand() * 0.1));
+  // eye-spot hole
+  const hole = new THREE.Path();
+  for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2; const v = [0.62 + Math.cos(a) * 0.09, 0.02 + Math.sin(a) * 0.09]; if (k) hole.lineTo(...v); else hole.moveTo(...v); }
+  shape.holes.push(hole);
+  const wg = new THREE.ExtrudeGeometry(shape, { depth: 0.01, bevelEnabled: false });
+  wg.rotateX(-Math.PI / 2); // lie flat, span +x, length along z
+  const wing = finalize(wg, C);
+  return { body, wing };
+}
+
+// Ceiling crawler: a long flat body slung between eight jointed legs.
+// Built upright (legs down); it is flipped to hang from vaults. Faces +Z.
+export function buildCeilingCrawler() {
+  const P = [];
+  const add = (g) => P.push(finalize(g, C));
+  add(ball([0, 0.35, 0], 0.22, 1.1, 0.55, 2.0, 12));
+  add(ball([0, 0.32, 0.55], 0.13, 1.0, 0.7, 1.2, 10));
+  for (const s of [-1, 1]) {
+    add(limb([s * 0.05, 0.3, 0.66], [s * 0.12, 0.18, 0.86], 0.02, 0.004, 5)); // mandibles
+    for (let k = 0; k < 4; k++) {
+      const z = 0.3 - k * 0.22;
+      const knee = [s * (0.55 + k * 0.05), 0.75, z + (1.5 - k) * 0.12];
+      const foot = [s * (0.95 + k * 0.08), 0.0, z + (1.5 - k) * 0.25];
+      add(limb([s * 0.15, 0.35, z], knee, 0.035, 0.025, 6));
+      add(limb(knee, foot, 0.025, 0.006, 6));
+    }
+  }
+  return merge(P);
+}
+
+// A hooded keeper. pose: 'kneel' (echoes at prayer), 'sit' (dead, slumped against
+// something), 'stand'. Holds a small lantern unless `lantern` is false. Faces +Z.
+export function buildKeeper(pose = 'kneel', { lantern = true, tone = 0 } = {}) {
+  const o = tone > 0 ? { tone, gloss: 0.15 } : C;
+  const P = [];
+  const add = (g) => P.push(finalize(g, o));
+  const y0 = pose === 'stand' ? 0 : pose === 'kneel' ? -0.45 : -0.75;
+  const lean = pose === 'sit' ? -0.35 : pose === 'kneel' ? 0.15 : 0;
+  // robe: open cone, hood, head
+  const robe = new THREE.CylinderGeometry(0.17, pose === 'sit' ? 0.45 : 0.38, pose === 'sit' ? 0.75 : 1.2, 12, 3, false);
+  robe.applyMatrix4(mat([0, y0 + (pose === 'sit' ? 0.95 : 0.95), 0], [lean, 0, 0]));
+  add(robe);
+  const headY = y0 + (pose === 'sit' ? 1.45 : 1.68);
+  const hz = Math.sin(lean) * -0.5 + (pose === 'sit' ? 0.12 : 0.05);
+  add(ball([0, headY - 0.02, hz - 0.03], 0.15, 1, 1.15, 1.1, 10)); // hood
+  add(ball([0, headY - 0.04, hz + 0.05], 0.1, 0.9, 1.1, 0.9, 8));  // face in the hood
+  if (pose === 'sit') {
+    for (const s of [-1, 1]) {
+      add(limb([s * 0.15, y0 + 0.62, 0.05], [s * 0.2, y0 + 0.6, 0.55], 0.075, 0.065, 8)); // thighs
+      add(limb([s * 0.2, y0 + 0.6, 0.55], [s * 0.22, y0 + 0.62 - 0.4, 0.62], 0.06, 0.05, 8));
+      add(limb([s * 0.2, y0 + 1.25, 0.05], [s * 0.3, y0 + 0.8, 0.35], 0.05, 0.04, 8)); // arms in the lap
+    }
+  } else {
+    for (const s of [-1, 1]) {
+      add(limb([s * 0.2, y0 + 1.42, 0.02], [s * 0.18, y0 + 1.1, 0.28], 0.05, 0.04, 8));
+      add(limb([s * 0.18, y0 + 1.1, 0.28], [s * 0.06, y0 + 1.15, 0.38], 0.04, 0.035, 8)); // hands together
+    }
+  }
+  if (lantern) {
+    const ly = pose === 'sit' ? y0 + 0.45 : y0 + 1.0;
+    const lz = pose === 'sit' ? 0.75 : 0.42;
+    add(new THREE.BoxGeometry(0.11, 0.15, 0.11).applyMatrix4(mat([0, ly, lz])));
+    add(new THREE.ConeGeometry(0.08, 0.06, 4).applyMatrix4(mat([0, ly + 0.1, lz], [0, Math.PI / 4, 0])));
+    add(limb([0, ly + 0.13, lz], [0.04, y0 + 1.12, 0.38], 0.006, 0.006, 3));
+  }
+  return merge(P);
+}

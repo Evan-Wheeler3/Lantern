@@ -39,7 +39,37 @@ src/
   debug/              look-dev panel + FPS (only with ?dev=1)
 ```
 
-## Gameplay systems
+## Gameplay systems (v3: depths, oil, story)
+
+* **Flow.** `index.html` without params shows **the shrine** (`ui/Shrine.js`): oil, depth choice,
+  upgrade shop. Choosing a depth pays its toll (`core/Progress.js`, localStorage) and reloads with
+  `?round=N` plus a one-shot paid ticket in sessionStorage. Each depth has a fixed seed
+  (`data/rounds.js`), so cleared depths can be replayed for free to gather oil.
+* **Loadout** (`game/Loadout.js`) applies the depth's difficulty and bought upgrades to `GAME` /
+  `settings.light` before anything is built. `abilitiesAt(n)` gates the blast and the firebomb.
+* **Interactions** (`game/Interactions.js`): every E-action registers `{x, z, radius, hold, label,
+  enabled, onComplete | onHold}`; the nearest one in front of the player wins the prompt.
+* **Oil** (`game/OilSpills.js`, `game/Economy.js`, `shaders/oil.frag.glsl`): spills are placed by
+  the builder; scooping stows the lantern (`Lantern.update` ctx.collecting → light ×0.28). The sack
+  is settled into progress on win (keep all) or death (back to the entry amount).
+* **Great door & sanctum** (`Dungeon._placeSanctum`, `world/Doors.js`): a 6 × 7 room is carved
+  behind the exit room. The door is barred until all beacons are lit; the bar falls (heard
+  everywhere) and the lantern flame leans toward it (`flame.frag` uLean). The sanctum holds the
+  chapter's page (lectern) and the well down.
+* **Story** (`data/story.js`, `world/StoryRoom.js`, `ui/Plate.js`): per-depth intro, ability lesson
+  and one beat per beacon (mural / echo / keeper) + the door page. Plates pause the world.
+* **Blast pose & star jet** (`Lantern.js`, `FireJet.js`): the root blends to a centred pose, the
+  lantern rotates half a turn on its bail so the star shutter faces forward, the off hand comes up
+  behind it; particles are emitted along a star outline so the front expands as a star.
+* **Firebomb** (`game/Firebomb.js`): prime (sack, douse) → charge (arc guide) → ballistic flight →
+  burning pool (light slot 7, damage, moth lure). While the lantern lies in the fire, the light
+  source *is* the thrown lantern; walk in and press E to take it back.
+* **Monsters** (`game/Monsters.js`): types `stalker`, `hound` (ground), `moth` (flying, lured by the
+  beam and burning oil, immune to freezing), `ceiling` (walks the ceilings of crypts and chapels,
+  drips, drops when you pass under, then hunts on the ground).
+
+## Gameplay systems (v2 notes, still valid)
+
 
 **Dungeon generation (`Dungeon.js`).** 10 rooms (crypt 8–11 m, chapel 10–14 m, hall 12–26 m) are
 placed with rejection sampling on a 100 × 100 m grid, at least 5 m apart. A minimum spanning tree

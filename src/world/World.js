@@ -13,18 +13,21 @@ import { createWorldMaterial } from '../renderer/Materials.js';
 import { LAYERS } from '../renderer/Layers.js';
 
 export class World {
-  constructor(scene, events, seed) {
+  constructor(scene, events, seed, round = { rooms: 10, beacons: 5, oilSpills: 7 }) {
     this.scene = scene;
     this.events = events;
     this.layout = { floorY: FLOOR_Y, waterLevel: 0 };
 
-    this.dungeon = new Dungeon(seed);
+    this.dungeon = new Dungeon(seed, { roomCount: round.rooms, beaconCount: round.beacons });
     const dg = this.dungeon;
-    const built = buildDungeon(dg);
+    const built = buildDungeon(dg, { oilSpills: round.oilSpills });
     this.colliders = built.colliders;
     this.walkables = built.walkables;
     this.beaconFires = built.beaconFires;
     this.door = built.door;
+    this.greatDoor = built.greatDoor;
+    this.sanctumSpots = built.sanctum;
+    this.oil = built.oil;
 
     this.material = createWorldMaterial();
     this.root = new THREE.Group();
@@ -58,6 +61,22 @@ export class World {
     const to = this.dungeon.rooms[r.links[0]] || r;
     const yaw = Math.atan2(-(to.cx - r.cx), -(to.cz - r.cz));
     return { x: r.cx, z: r.cz, yaw };
+  }
+
+  // Height of the ceiling (inside hall vaults: the vault curve).
+  ceilingAt(x, z) {
+    const dg = this.dungeon;
+    const i = dg.toI(x), j = dg.toJ(z);
+    if (!dg.inBounds(i, j)) return 4;
+    const c = dg.ceil[dg.idx(i, j)];
+    const r = dg.roomAt(x, z);
+    if (!r || r.kind !== 'hall' || dg.type(i, j) !== 1) return c;
+    const S = r.longAxis === 'x' ? r.d : r.w;
+    const u = r.longAxis === 'x' ? z - r.cz : x - r.cx;
+    const R = 0.7 * S;
+    const cx = S / 2 - R;
+    const du = Math.abs(u) - cx;
+    return c + Math.sqrt(Math.max(0, R * R - du * du));
   }
 
   groundHeight(x, z) {

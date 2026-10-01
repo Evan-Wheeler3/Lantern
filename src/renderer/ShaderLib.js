@@ -28,6 +28,8 @@ import fireVert from '../shaders/fire.vert.glsl?raw';
 import fireFrag from '../shaders/fire.frag.glsl?raw';
 import portalVert from '../shaders/portal.vert.glsl?raw';
 import portalFrag from '../shaders/portal.frag.glsl?raw';
+import oilVert from '../shaders/oil.vert.glsl?raw';
+import oilFrag from '../shaders/oil.frag.glsl?raw';
 
 THREE.ShaderChunk.lk_common = common;
 THREE.ShaderChunk.lk_lighting = lighting;
@@ -37,5 +39,5 @@ export const SHADERS = {
   worldVert, worldFrag, creatureFrag, waterVert, waterFrag, flameVert, flameFrag,
   embersVert, embersFrag, dripsVert, dripsFrag, shadowVert, shadowFrag,
   fullscreenVert, fogFrag, bloomBrightFrag, bloomDownFrag, bloomUpFrag, compositeFrag,
-  fireVert, fireFrag, portalVert, portalFrag,
+  fireVert, fireFrag, portalVert, portalFrag, oilVert, oilFrag,
 };

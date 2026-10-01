@@ -1,5 +1,5 @@
-// Woodcut HUD: beacon count, remaining flames (hits), fire meter, prompts,
-// messages, and the end cards. Plain DOM, palette colours only.
+// Woodcut HUD: beacons, remaining flames (hits), oil sack, fire meter, firebomb
+// charge, the interaction prompt, messages, and the end card.
 import { GAME } from '../core/GameConfig.js';
 
 const $ = (id) => document.getElementById(id);
@@ -8,6 +8,7 @@ export class HUD {
   constructor() {
     this.root = $('hud');
     this.obj = $('hud-objective');
+    this.oil = $('hud-oil');
     this.flames = $('hud-flames');
     this.meter = $('hud-meter');
     this.meterFill = $('hud-meter-fill');
@@ -28,26 +29,35 @@ export class HUD {
     this._ended = false;
   }
 
-  update(game, lantern, beacons) {
+  update(game, lantern, ctx) {
+    const { beacons, interactions, economy, abilities, firebomb, doors, round } = ctx;
     this.root.classList.toggle('hidden', game.state !== 'playing');
 
-    this.obj.textContent = beacons.doorUnsealed
-      ? 'The seal is broken — find the open door'
-      : `Beacons kindled  ${beacons.litCount} / ${beacons.total}`;
+    this.obj.textContent = doors.unlocked
+      ? (doors.open > 0 ? 'Depth ' + round.n + ' — the way down is open' : 'The great door is unbarred — find it')
+      : `Depth ${round.n}  ·  Beacons kindled  ${beacons.litCount} / ${beacons.total}`;
+    this.oil.textContent = `Oil  ${Math.floor(economy.sack)}${economy.gathered >= 1 ? `   (+${Math.floor(economy.gathered)} this descent)` : ''}`;
 
     this.flameEls.forEach((el, k) => el.classList.toggle('lost', k >= GAME.maxHits - game.hits));
 
-    const m = lantern.burnout ? lantern.recover : lantern.fuel;
+    // fire meter (only once the blast is known); firebomb charge borrows it
+    const hasBlast = abilities.has('blast');
+    const charging = firebomb.state === 'charging' || firebomb.state === 'priming';
+    this.meter.classList.toggle('hidden', !hasBlast && !charging);
+    let m = lantern.burnout ? lantern.recover : lantern.fuel;
+    if (charging) m = firebomb.state === 'priming' ? 0 : firebomb.charge;
     this.meterFill.style.width = `${(m * 100).toFixed(1)}%`;
-    this.meter.classList.toggle('burnout', lantern.burnout);
-    this.meter.classList.toggle('blasting', lantern.blasting);
-    this.meterLabel.textContent = lantern.burnout ? 'BURNT OUT — mash SPACE' : '';
+    this.meter.classList.toggle('burnout', lantern.burnout && !charging);
+    this.meter.classList.toggle('blasting', lantern.blasting || charging);
+    this.meterLabel.textContent = charging ? (firebomb.state === 'priming' ? 'dousing the lantern…' : 'release Q to throw')
+      : lantern.thrown ? 'your lantern lies in the fire'
+      : lantern.burnout ? 'BURNT OUT — mash SPACE' : '';
 
-    const p = beacons.prompt;
-    this.prompt.classList.toggle('hidden', !p || game.state !== 'playing');
+    const p = interactions.prompt;
+    this.prompt.classList.toggle('hidden', !p || game.state !== 'playing' || game.paused);
     if (p) {
-      this.promptText.textContent = p.kind === 'kindle' ? 'Hold  E  to kindle the beacon' : 'Step through the door';
-      this.promptFill.style.width = p.kind === 'kindle' ? `${(p.progress * 100).toFixed(0)}%` : '0%';
+      this.promptText.textContent = p.label;
+      this.promptFill.style.width = `${(p.progress * 100).toFixed(0)}%`;
     }
 
     const key = game.messages.map((x) => x.text).join('|');
@@ -65,9 +75,14 @@ export class HUD {
 
     if ((game.state === 'dead' || game.state === 'won') && !this._ended) {
       this._ended = true;
+      const won = game.state === 'won';
       const min = Math.floor(game.time / 60), sec = Math.floor(game.time % 60).toString().padStart(2, '0');
-      $('end-title').textContent = game.state === 'won' ? 'You walked out of the dark.' : 'The flame is out.';
-      $('end-stats').textContent = `${game.lit} of ${game.total} beacons kindled · ${game.kills} shadows burned · ${min}:${sec} · seed ${game.seed}`;
+      $('end-title').textContent = won ? `Depth ${round.n} — you found the way down.` : 'The flame is out.';
+      const g = Math.floor(economy.gathered);
+      $('end-stats').textContent = `${game.lit} of ${game.total} beacons kindled · ${game.kills} shadows burned · ${min}:${sec}`;
+      $('end-oil').textContent = won
+        ? `You carry ${Math.floor(economy.settled)} oil back up the well${g ? ` (+${g} gathered)` : ''}.`
+        : g ? `The ${g} oil you gathered is lost in the dark. ${Math.floor(economy.settled)} remain in the sack.` : `${Math.floor(economy.settled)} oil remain in the sack.`;
       setTimeout(() => this.end.classList.remove('hidden'), 1800);
     }
   }

@@ -10,7 +10,7 @@ export const GAME = {
   kindleTime: 0.9,         // s holding E
 
   // fire blast (right mouse) through the lantern
-  fuelDrain: 1.0,          // meter per second while blasting (meter = 1)
+  blastDuration: 2.0,      // s of continuous blast from a full meter (upgradeable)
   fuelRegen: 0.32,         // per second when idle
   fuelRegenDelay: 0.5,     // s after releasing before regen starts
   burnoutTime: 4.0,        // s to recover from a burnout unaided
@@ -32,4 +32,15 @@ export const GAME = {
   respawnEvery: 22,        // s
   aggroDist: 55,           // weighted path distance (~m) at which they start hunting
   attackRange: 0.95,
+  monsterSpeed: 1.0,       // per-depth multiplier
+
+  // oil (the only resource)
+  oilGatherRate: 9,        // oil per second while scooping
+  stowTime: 0.45,          // s to hang the lantern and get both hands into the oil
+  throwCost: 6,
+  throwRadius: 3.0,        // m (upgradeable)
+  throwBurn: 9,            // s the pool burns
+  throwDps: 2.2,
+  beamReachMul: 1,
+  chargeMul: 1,
 };
