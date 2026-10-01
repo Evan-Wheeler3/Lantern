@@ -14,12 +14,15 @@ export class PlayerController {
     this.events = events;
     this.dom = dom;
 
-    this.feet = new THREE.Vector3(-0.1, world.layout.floorY, 3.7);
+    const start = world.startPose ? world.startPose() : { x: 0, z: 0, yaw: 0 };
+    this.feet = new THREE.Vector3(start.x, world.layout.floorY, start.z);
     this.vel = new THREE.Vector3();
     this.prevVel = new THREE.Vector3();
     this.accelLocal = new THREE.Vector3();
-    this.yaw = 0.2;
+    this.yaw = start.yaw;
     this.pitch = -0.08;
+    this.rightHeld = false;
+    this.interactHeld = false;
     this.yawRate = 0;
     this.pitchRate = 0;
     this._mouse = { dx: 0, dy: 0 };
@@ -39,6 +42,9 @@ export class PlayerController {
       if (!this.locked) dom.requestPointerLock?.();
       else events.emit('focusToggle');
     });
+    dom.addEventListener('mousedown', (e) => { if (e.button === 2 && this.locked) this.rightHeld = true; });
+    window.addEventListener('mouseup', (e) => { if (e.button === 2) this.rightHeld = false; });
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === dom;
       events.emit('pointerlock', this.locked);
@@ -50,11 +56,13 @@ export class PlayerController {
     });
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      if (e.code === 'Space') e.preventDefault();
+      if (!e.repeat && e.code === 'Space') events.emit('pump');
       this.keys.add(e.code);
       if (e.code === 'KeyF') events.emit('focusToggle');
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.keys.clear(); this.rightHeld = false; });
   }
 
   get inWater() {
@@ -75,7 +83,9 @@ export class PlayerController {
     this.pitchRate += (dPitch / Math.max(dt, 1e-4) - this.pitchRate) * rateK;
 
     // ---- move ----
-    const k = this.keys;
+    const k = this.enabled ? this.keys : new Set();
+    this.interactHeld = this.enabled && k.has('KeyE');
+    if (!this.enabled) this.rightHeld = false;
     let fx = 0, fz = 0;
     if (k.has('KeyW') || k.has('ArrowUp')) fz -= 1;
     if (k.has('KeyS') || k.has('ArrowDown')) fz += 1;

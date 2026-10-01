@@ -30,6 +30,9 @@ export class CompositePass {
       uPostB: { value: new THREE.Vector4() },
       uFogIntensity: { value: 1 },
       uDebugView: { value: 0 },
+      uHurt: { value: 0 },
+      uFade: { value: 0 },
+      uFadeTo: { value: 0 },
     }, 'lk-composite');
   }
 

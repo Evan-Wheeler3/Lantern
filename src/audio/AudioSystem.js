@@ -62,6 +62,19 @@ export class AudioSystem {
     events.on('drip', (d) => this.drip(d));
     events.on('footstep', (f) => this.footstep(f));
     events.on('focus', (on) => this.shutter(on));
+    events.on('blastStart', () => this.blastStart());
+    events.on('blastEnd', () => this.blastStop());
+    events.on('burnout', () => { this.blastStop(); this.sputter(); });
+    events.on('rekindled', () => this.whoosh(0.5, 300));
+    events.on('pump', () => this.pump());
+    events.on('beaconLit', (b) => this.kindle(b.pos));
+    events.on('allLit', () => this.rumble());
+    events.on('hurt', () => this.hit());
+    events.on('monsterGrowl', (m) => this.growl(m));
+    events.on('monsterFrozen', (m) => this.freeze(m));
+    events.on('monsterKilled', (m) => this.burnAway(m));
+    events.on('died', () => this.sting(false));
+    events.on('won', () => this.sting(true));
   }
 
   // Must be called from a user gesture.
@@ -321,6 +334,254 @@ export class AudioSystem {
       o.start(t);
       o.stop(t + 0.12);
     }
+  }
+
+  // ------------------------------------------------------------ gameplay sounds
+  _noiseSrc(loop = false) {
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.noise;
+    s.loop = loop;
+    return s;
+  }
+
+  _env(g, t, a, peak, d) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+  }
+
+  // Off-hand blast: a held roar of air through the flame.
+  blastStart() {
+    if (!this.ctx || this._blast) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const src = this._noiseSrc(true);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(400, t);
+    lp.frequency.exponentialRampToValueAtTime(2600, t + 0.15);
+    lp.Q.value = 1.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5 * settings.audio.crackle + 0.05, t + 0.06);
+    src.connect(lp).connect(g);
+    this._send(g, 0.5, 1);
+    src.start(t, Math.random());
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = 55;
+    const og = ctx.createGain();
+    og.gain.value = 0.12;
+    const olp = ctx.createBiquadFilter();
+    olp.type = 'lowpass';
+    olp.frequency.value = 160;
+    o.connect(olp).connect(og).connect(g);
+    o.start(t);
+    this._blast = { src, o, g, lp };
+  }
+
+  blastStop() {
+    if (!this._blast) return;
+    const { src, o, g, lp } = this._blast;
+    const t = this.ctx.currentTime;
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    lp.frequency.exponentialRampToValueAtTime(300, t + 0.25);
+    src.stop(t + 0.3);
+    o.stop(t + 0.3);
+    this._blast = null;
+  }
+
+  sputter() {
+    if (!this.ctx) return;
+    const t0 = this.ctx.currentTime;
+    for (let k = 0; k < 6; k++) {
+      const t = t0 + k * (0.06 + Math.random() * 0.08);
+      const s = this._noiseSrc();
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = 600 + Math.random() * 900; bp.Q.value = 2;
+      const g = this.ctx.createGain();
+      this._env(g, t, 0.004, 0.35 / (k + 1), 0.08);
+      s.connect(bp).connect(g);
+      this._send(g, 0.4, 1);
+      s.start(t, Math.random(), 0.12);
+    }
+  }
+
+  // Space: pumping oil into the wick — a squeak and a glug.
+  pump() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.005;
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    const f0 = 180 + Math.random() * 60;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.12);
+    const g = ctx.createGain();
+    this._env(g, t, 0.01, 0.25, 0.14);
+    o.connect(g);
+    this._send(g, 0.2, 1);
+    o.start(t); o.stop(t + 0.2);
+  }
+
+  whoosh(amp = 0.6, from = 200, at = null) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.01;
+    const s = this._noiseSrc();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(from, t);
+    bp.frequency.exponentialRampToValueAtTime(from * 8, t + 0.5);
+    const g = ctx.createGain();
+    this._env(g, t, 0.15, amp, 0.9);
+    s.connect(bp).connect(g);
+    if (at) { const p = this._panner(at.x, at.y, at.z); g.connect(p); this._send(p, 0.8, 1); } else this._send(g, 0.6, 1);
+    s.start(t, Math.random(), 1.3);
+  }
+
+  kindle(pos) {
+    if (!this.ctx) return;
+    this.whoosh(0.9, 150, pos);
+    const ctx = this.ctx, t = ctx.currentTime + 0.3;
+    // a low consonant chord that hangs in the reverb
+    for (const f of [73.4, 110, 146.8, 220]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      this._env(g, t, 0.4, 0.08, 3.5);
+      o.connect(g);
+      this._send(g, 1.0, 0.6);
+      o.start(t); o.stop(t + 4.2);
+    }
+  }
+
+  rumble() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.05;
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.brown;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 140;
+    const g = ctx.createGain();
+    this._env(g, t, 0.6, 1.2, 3.5);
+    s.connect(lp).connect(g);
+    this._send(g, 0.9, 1);
+    s.start(t, 0, 4.5);
+  }
+
+  hit() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.005;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(70, t);
+    o.frequency.exponentialRampToValueAtTime(30, t + 0.4);
+    const g = ctx.createGain();
+    this._env(g, t, 0.005, 0.9, 0.5);
+    o.connect(g);
+    this._send(g, 0.6, 1);
+    o.start(t); o.stop(t + 0.6);
+    // the flame chokes: a hiss that falls away
+    const s = this._noiseSrc();
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 2500;
+    const hg = ctx.createGain();
+    this._env(hg, t, 0.01, 0.3, 0.6);
+    s.connect(hp).connect(hg);
+    this._send(hg, 0.4, 1);
+    s.start(t, Math.random(), 0.8);
+  }
+
+  // Positional growl: formant-filtered brown noise + a dragging sub tone.
+  growl(m) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.01;
+    const p = this._panner(m.x, 1.4, m.z);
+    p.refDistance = 2.5;
+    this._send(p, 0.9, 1);
+    const dur = 0.9 + Math.random() * 0.8;
+    const s = ctx.createBufferSource();
+    s.buffer = this.brown;
+    for (const [f, q, a] of [[m.type === 'crawler' ? 520 : 320, 6, 1.0], [m.type === 'crawler' ? 1300 : 900, 8, 0.5]]) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.Q.value = q;
+      bp.frequency.setValueAtTime(f, t);
+      bp.frequency.linearRampToValueAtTime(f * 0.7, t + dur);
+      const g = ctx.createGain();
+      this._env(g, t, dur * 0.4, 1.6 * a, dur * 0.6);
+      s.connect(bp).connect(g).connect(p);
+    }
+    s.start(t, Math.random() * 3, dur + 0.1);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(m.type === 'crawler' ? 62 : 44, t);
+    o.frequency.linearRampToValueAtTime(m.type === 'crawler' ? 50 : 36, t + dur);
+    const og = ctx.createGain();
+    this._env(og, t, dur * 0.5, 0.25, dur * 0.5);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 220;
+    o.connect(lp).connect(og).connect(p);
+    o.start(t); o.stop(t + dur + 0.1);
+  }
+
+  freeze(m) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.01;
+    const p = this._panner(m.x, 1.4, m.z);
+    this._send(p, 1.0, 1);
+    for (const f of [1567, 2349, 3136]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(f * 0.97, t);
+      o.frequency.linearRampToValueAtTime(f, t + 0.3);
+      const g = ctx.createGain();
+      this._env(g, t, 0.02, 0.12, 1.4);
+      o.connect(g).connect(p);
+      o.start(t); o.stop(t + 1.6);
+    }
+  }
+
+  burnAway(m) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.01;
+    const p = this._panner(m.x, 1.4, m.z);
+    this._send(p, 0.9, 1);
+    const s = this._noiseSrc();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 3;
+    bp.frequency.setValueAtTime(1800, t);
+    bp.frequency.exponentialRampToValueAtTime(200, t + 1.2);
+    const g = ctx.createGain();
+    this._env(g, t, 0.02, 1.2, 1.3);
+    s.connect(bp).connect(g).connect(p);
+    s.start(t, Math.random(), 1.5);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(380, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 1.1);
+    const og = ctx.createGain();
+    this._env(og, t, 0.03, 0.2, 1.1);
+    o.connect(og).connect(p);
+    o.start(t); o.stop(t + 1.3);
+  }
+
+  sting(won) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime + 0.1;
+    const notes = won ? [146.8, 220, 293.7, 440] : [110, 103.8, 82.4, 55];
+    notes.forEach((f, k) => {
+      const o = ctx.createOscillator();
+      o.type = won ? 'triangle' : 'sawtooth';
+      o.frequency.value = f;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = won ? 1800 : 400;
+      const g = ctx.createGain();
+      this._env(g, t + k * 0.35, 0.3, 0.12, 4);
+      o.connect(lp).connect(g);
+      this._send(g, 1.0, 0.7);
+      o.start(t + k * 0.35); o.stop(t + k * 0.35 + 4.5);
+    });
+    if (!won) this.droneGain?.gain.setTargetAtTime(0.02, ctx.currentTime, 2);
   }
 
   // metallic clack when the shutters move

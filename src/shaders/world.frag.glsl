@@ -34,6 +34,7 @@ void main() {
   float albedo = vTone * mix(1.0, 0.72, wet);
 
   float I = ndl * atten * sh * uLightIntensity * albedo;
+  I += lk_beacons(vWorldPos, N) * albedo;
 
   vec3 H = normalize(L + V);
   float specPow = uBand2.w * mix(0.6, 1.6, wet);

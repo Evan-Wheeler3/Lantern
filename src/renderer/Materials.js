@@ -24,9 +24,13 @@ export function createCreatureMaterial() {
     name: 'lk-creature',
     uniforms: {
       ...shared,
-      uObjectHatch: { value: 0 },
+      uObjectHatch: { value: 1 }, // object space: burn/shimmer noise rides with the body
       uHatchObjScale: { value: 1 },
       uRim: { value: new THREE.Vector3(3, 0.45, 0.2) },
+      uCharge: { value: 0 },
+      uFrozen: { value: 0 },
+      uDissolve: { value: 0 },
+      uHurt: { value: 0 },
     },
     vertexShader: SHADERS.worldVert,
     fragmentShader: SHADERS.creatureFrag,
@@ -98,6 +102,27 @@ export function createDripMaterial() {
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
+  });
+}
+
+export function createFireMaterial() {
+  return new THREE.ShaderMaterial({
+    name: 'lk-fire',
+    uniforms: { uTime: shared.uTime, uEmber: shared.uEmber, uCream: shared.uCream, uPxScale: shared.uPxScale },
+    vertexShader: SHADERS.fireVert,
+    fragmentShader: SHADERS.fireFrag,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+export function createPortalMaterial() {
+  return new THREE.ShaderMaterial({
+    name: 'lk-portal',
+    uniforms: { uTime: shared.uTime, uEmber: shared.uEmber, uCream: shared.uCream, uOpen: { value: 0 } },
+    vertexShader: SHADERS.portalVert,
+    fragmentShader: SHADERS.portalFrag,
   });
 }
 

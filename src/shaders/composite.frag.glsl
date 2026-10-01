@@ -23,6 +23,9 @@ uniform vec4 uOutB;        // wobbleFreq, boilFps, darkVisibility, darkGlow
 uniform vec4 uPostA;       // exposure, contrast, bloom, grain
 uniform vec4 uPostB;       // paper, vignette, paletteStrength, posterize
 uniform float uFogIntensity;
+uniform float uHurt;       // 0..1 damage pulse: the print closes in to ink
+uniform float uFade;       // 0..1 fade (death -> ink, escape -> cream)
+uniform float uFadeTo;     // 0 ink, 1 cream
 uniform float uDebugView;  // 0 final, 1 color, 2 normals, 3 light term, 4 fog, 5 edges
 
 varying vec2 vUv;
@@ -116,6 +119,8 @@ void main() {
   vec2 q = (vUv - 0.5) * vec2(uResolution.x / uResolution.y, 1.0);
   float v = 1.0 - smoothstep(0.3, 1.05, length(q));
   P *= mix(1.0, v, uPostB.y);
+  P *= mix(1.0, smoothstep(0.95, 0.15, length(q)), uHurt);
+  P = mix(P, uFadeTo * 1.2, uFade);
 
   if (uPostB.w > 1.5) {
     float steps = uPostB.w;

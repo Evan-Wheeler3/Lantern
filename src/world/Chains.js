@@ -35,23 +35,27 @@ export class Chains {
       w: Math.sqrt(9.81 / Math.max(a.y - a.bottom, 1)),
       amp: 0.012 + (i % 3) * 0.006,
     }));
-    const count = this.chains.reduce((n, c) => n + c.links, 0);
-    const link = new THREE.TorusGeometry(0.048, 0.012, 4, 8); // 64 tris: ~570 links x 8 passes
+    // One InstancedMesh per chain with a fixed (padded) bounding sphere, so each
+    // chain is culled per pass instead of always being drawn into all 8 passes.
+    const link = new THREE.TorusGeometry(0.048, 0.012, 3, 6); // 36 tris
     link.scale(1, 1.45, 1);
-    this.mesh = new THREE.InstancedMesh(finalize(link, IRON), material, count);
-    this.mesh.frustumCulled = false;
-    this.mesh.layers.set(LAYERS.WORLD);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-
+    const linkGeo = finalize(link, IRON);
     this.group = new THREE.Group();
-    this.group.add(this.mesh);
+    for (const c of this.chains) {
+      const mesh = new THREE.InstancedMesh(linkGeo, material, c.links);
+      mesh.layers.set(LAYERS.WORLD);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const len = c.links * SPACING;
+      mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(c.x, c.y - len / 2, c.z), len / 2 + 0.6);
+      c.mesh = mesh;
+      this.group.add(mesh);
+    }
     this.cages = [];
     const cageGeo = buildCage();
     for (const c of this.chains) {
       if (!c.cage) continue;
       const m = new THREE.Mesh(cageGeo, material);
       m.layers.set(LAYERS.WORLD);
-      m.frustumCulled = false;
       this.group.add(m);
       this.cages.push({ chain: c, mesh: m });
     }
@@ -66,8 +70,8 @@ export class Chains {
   }
 
   update(t) {
-    let k = 0;
     for (const c of this.chains) {
+      let k = 0;
       const ax = c.amp * Math.sin(t * c.w + c.phase);
       const az = c.amp * 0.7 * Math.sin(t * c.w * 1.17 + c.phase2);
       this._e.set(ax, 0, az);
@@ -78,13 +82,13 @@ export class Chains {
         this._q.copy(this._qa);
         if (i & 1) this._q.multiply(this._twist);
         this._m.compose(this._p, this._q, this._s);
-        this.mesh.setMatrixAt(k++, this._m);
+        c.mesh.setMatrixAt(k++, this._m);
       }
       c.endPos = c.endPos || new THREE.Vector3();
       c.endPos.set(0, -c.links * SPACING, 0).applyQuaternion(this._qa).add(this._p.set(c.x, c.y, c.z));
       c.endQuat = (c.endQuat || new THREE.Quaternion()).copy(this._qa);
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
+    for (const c of this.chains) c.mesh.instanceMatrix.needsUpdate = true;
     for (const { chain, mesh } of this.cages) {
       mesh.position.copy(chain.endPos);
       mesh.quaternion.copy(chain.endQuat);

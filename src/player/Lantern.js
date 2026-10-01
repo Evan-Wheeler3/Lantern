@@ -8,6 +8,7 @@ import { shared, paletteLinear } from '../renderer/SharedUniforms.js';
 import { createWorldMaterial, createFlameMaterial } from '../renderer/Materials.js';
 import { LAYERS } from '../renderer/Layers.js';
 import { finalize, merge, limb, mat } from '../world/geo.js';
+import { GAME } from '../core/GameConfig.js';
 
 const IRON = { tone: 0.68, gloss: 0.85 };
 const BRASS = { tone: 0.85, gloss: 0.9 };
@@ -102,6 +103,25 @@ function buildHand() {
   return merge(P);
 }
 
+// Open left palm, fingers splayed: the gesture that drives fire through the lantern.
+function buildOffHand() {
+  const P = [];
+  const add = (g) => P.push(finalize(g, LEATHER));
+  add(new THREE.BoxGeometry(0.085, 0.095, 0.03, 2, 2, 1));
+  const tips = [[-0.05, 0.11, -0.02], [-0.015, 0.125, -0.025], [0.02, 0.12, -0.022], [0.05, 0.1, -0.015]];
+  const roots = [[-0.03, 0.045], [-0.01, 0.048], [0.012, 0.048], [0.032, 0.044]];
+  tips.forEach((t, k) => {
+    const r = [roots[k][0], roots[k][1], 0];
+    const m = [(r[0] + t[0]) / 2, (r[1] + t[1]) / 2 + 0.005, (r[2] + t[2]) / 2 - 0.004];
+    add(limb(r, m, 0.011, 0.01, 6));
+    add(limb(m, t, 0.01, 0.008, 6));
+  });
+  add(limb([0.045, -0.02, 0], [0.085, 0.03, -0.03], 0.012, 0.01, 6)); // thumb
+  add(limb([0, -0.045, 0.005], [-0.02, -0.18, 0.12], 0.03, 0.036, 10)); // wrist/forearm
+  add(limb([-0.02, -0.18, 0.12], [-0.06, -0.4, 0.3], 0.036, 0.045, 10));
+  return merge(P);
+}
+
 export class Lantern {
   constructor(camera, events) {
     this.camera = camera;
@@ -167,6 +187,26 @@ export class Lantern {
     this._tmp = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
 
+    // ---- off hand + fire meter ----
+    this.offHand = new THREE.Mesh(buildOffHand(), this.material);
+    this.offHand.layers.set(LAYERS.VIEWMODEL);
+    this.offHand.visible = false;
+    camera.add(this.offHand);
+    this.offRest = new THREE.Vector3(-0.28, -0.6, -0.3);
+    this.offActive = new THREE.Vector3(0.05, -0.2, -0.37);
+    this.offBlend = 0;
+    this.fuel = 1;
+    this.burnout = false;
+    this.recover = 0;
+    this.blasting = false;
+    this.blast = 0;          // smoothed 0..1 for visuals
+    this._regenWait = 0;
+    this.hitDim = 1;
+    this.extinguish = 0;
+    events.on('pump', () => {
+      if (this.burnout) this.recover = Math.min(1, this.recover + GAME.pumpBoost);
+    });
+
     events.on('focusToggle', () => {
       this.focusTarget = this.focusTarget > 0.5 ? 0 : 1;
       events.emit('focus', this.focusTarget);
@@ -177,8 +217,42 @@ export class Lantern {
     return this.focusTarget > 0.5;
   }
 
-  update(dt, t, player) {
+  update(dt, t, player, game) {
     const L = settings.light;
+    const playing = !game || game.state === 'playing';
+
+    // ---- fire meter: blast drains, rest refills, empty = burnout ----
+    const wantBlast = playing && player.rightHeld && !this.burnout && this.extinguish === 0;
+    this.blasting = wantBlast && this.fuel > 0;
+    if (this.blasting) {
+      this.fuel = Math.max(0, this.fuel - dt * GAME.fuelDrain);
+      this._regenWait = GAME.fuelRegenDelay;
+      if (this.fuel <= 0) {
+        this.burnout = true;
+        this.recover = 0;
+        this.blasting = false;
+        this.events.emit('burnout', {});
+      }
+    } else if (this.burnout) {
+      this.recover = Math.min(1, this.recover + dt / GAME.burnoutTime);
+      if (this.recover >= 1) {
+        this.burnout = false;
+        this.fuel = 0.35;
+        this.events.emit('rekindled', {});
+      }
+    } else {
+      this._regenWait -= dt;
+      if (this._regenWait <= 0) this.fuel = Math.min(1, this.fuel + dt * GAME.fuelRegen);
+    }
+    if (this.blasting !== this._wasBlasting) this.events.emit(this.blasting ? 'blastStart' : 'blastEnd', {});
+    this._wasBlasting = this.blasting;
+    this.blast += ((this.blasting ? 1 : 0) - this.blast) * (1 - Math.exp(-dt * (this.blasting ? 18 : 6)));
+
+    // hits dim the flame; death puts it out
+    const hits = game ? game.hits : 0;
+    const targetDim = [1, 0.8, 0.64, 0.5][Math.min(hits, 3)];
+    this.hitDim += (targetDim - this.hitDim) * (1 - Math.exp(-dt * 3));
+    if (game && game.state === 'dead') this.extinguish = Math.min(1, this.extinguish + dt / 1.4);
 
     // ---- flicker: layered noise + occasional gutter ----
     const sp = L.flickerSpeed;
@@ -189,11 +263,14 @@ export class Lantern {
     let f = 1 + L.flicker * ((n - 0.5) * 0.75 - gutter * 0.45);
     // lower flicker in the focused beam (shuttered flame is sheltered)
     f = THREE.MathUtils.lerp(f, 1 + (f - 1) * 0.5, this.focus);
+    if (this.burnout) f *= 0.45 + 0.4 * n1(tt * 9.0, 9) + 0.15 * n1(tt * 31.0, 10); // sputtering wick
+    if (this.blast > 0.01) f = THREE.MathUtils.lerp(f, 1.15 + 0.25 * n1(tt * 40.0, 11), this.blast);
     this.flicker = f;
 
     // ---- focus (shutters) ----
     const fr = 1 - Math.exp(-dt * 5);
-    this.focus += (this.focusTarget - this.focus) * fr;
+    const focusGoal = this.blasting ? 1 : this.burnout ? 0 : this.focusTarget;
+    this.focus += (focusGoal - this.focus) * (this.blasting ? 1 - Math.exp(-dt * 14) : fr);
     const fe = this.focus * this.focus * (3 - 2 * this.focus);
     for (const s of this.shutters) {
       s.mesh.position.y = s.base - (1 - fe) * 0.175;
@@ -231,18 +308,33 @@ export class Lantern {
     this.flame.getWorldPosition(this.flameWorld);
     const j = L.jitter;
     this._tmp.set((n1(tt * 3.1, 6) - 0.5) * 2 * j, (n1(tt * 2.3, 7) - 0.5) * j + 0.025, (n1(tt * 2.7, 8) - 0.5) * 2 * j);
-    shared.uLightPos.value.copy(this.flameWorld).add(this._tmp);
-
-    const intensity = THREE.MathUtils.lerp(L.intensity, L.focusIntensity, fe);
-    shared.uLightIntensity.value = intensity * f;
-    shared.uLightRange.value = THREE.MathUtils.lerp(L.range, L.focusRange, fe);
-    shared.uFocus.value = fe;
     // beam follows the lantern body (so it swings), biased to where you look
     this._fwd.set(0, -0.06, -1).applyQuaternion(this.pivot.getWorldQuaternion(new THREE.Quaternion())).normalize();
     shared.uSpotDir.value.copy(this._fwd);
+    // the blast throws the light forward with the fire
+    shared.uLightPos.value.copy(this.flameWorld).add(this._tmp).addScaledVector(this._fwd, this.blast * 0.45);
 
-    const heat = THREE.MathUtils.clamp(0.4 + (f - 1) * 1.2, 0, 1);
+    const intensity = THREE.MathUtils.lerp(L.intensity, L.focusIntensity, fe);
+    const life = this.hitDim * (1 - this.extinguish) * (this.burnout ? 0.38 : 1) * (1 + 0.6 * this.blast);
+    shared.uLightIntensity.value = intensity * f * life;
+    shared.uLightRange.value = THREE.MathUtils.lerp(L.range, L.focusRange, fe) * (this.burnout ? 0.6 : 1) * (0.6 + 0.4 * this.hitDim);
+    shared.uFocus.value = fe;
+
+    const heat = THREE.MathUtils.clamp(0.4 + (f - 1) * 1.2 + this.blast, 0, 1);
     shared.uLightColor.value.copy(paletteLinear.ember).lerp(paletteLinear.cream, heat);
     this.flameMaterial.uniforms.uFlicker.value = THREE.MathUtils.clamp((f - 0.55) / 0.7, 0, 1);
+    this.flameMaterial.uniforms.uFlameGain.value = (1 - this.extinguish) * (this.burnout ? 0.55 : 1) * (1 + this.blast * 0.8);
+    this.flame.scale.set(1 + this.blast * 0.3, (1 + this.blast * 0.6) * (this.burnout ? 0.6 : 1), 1);
+
+    // off hand: rises in, palm thrust toward the lantern, trembling with the effort
+    this.offBlend += ((this.blasting ? 1 : 0) - this.offBlend) * (1 - Math.exp(-dt * (this.blasting ? 16 : 7)));
+    const ob = this.offBlend;
+    this.offHand.visible = ob > 0.01;
+    if (this.offHand.visible) {
+      this.offHand.position.lerpVectors(this.offRest, this.offActive, ob);
+      this.offHand.position.x += (Math.random() - 0.5) * 0.004 * this.blast;
+      this.offHand.position.y += (Math.random() - 0.5) * 0.004 * this.blast - b.y * 0.4;
+      this.offHand.rotation.set(0.15 - 0.3 * ob, -0.75 * ob - 0.2, 0.25 * (1 - ob));
+    }
   }
 }

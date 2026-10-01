@@ -23,6 +23,40 @@
       #overlay .keys b { color: var(--ember); font-weight: normal; }
       #overlay .go { margin-top: 32px; font-size: 22px; animation: breathe 2.6s ease-in-out infinite; }
       @keyframes breathe { 50% { opacity: 0.35; } }
+      #overlay .goal { font-size: 19px; line-height: 1.6; max-width: 640px; margin: 0 24px 26px; opacity: 0.92; }
+      #hud { position: fixed; inset: 0; pointer-events: none; font-family: 'IM Fell English', Georgia, serif; color: var(--cream); z-index: 5; }
+      #hud.hidden { display: none; }
+      #hud-objective { position: absolute; left: 22px; top: 18px; font-size: 20px; letter-spacing: 0.04em; color: var(--ember); text-shadow: 0 0 6px #000; }
+      #hud-flames { position: absolute; left: 22px; bottom: 22px; display: flex; gap: 10px; }
+      .flame-pip { width: 16px; height: 26px; background: var(--ember); border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+        box-shadow: 0 0 10px rgba(255, 138, 31, 0.7), inset 0 -8px 0 var(--cream); transition: all 0.4s; }
+      .flame-pip.lost { background: var(--oil); box-shadow: none; outline: 1px solid rgba(255, 138, 31, 0.35); }
+      #hud-meter { position: absolute; left: 50%; bottom: 26px; width: 260px; height: 10px; transform: translateX(-50%);
+        background: var(--oil); outline: 1px solid var(--ember); }
+      #hud-meter-fill { height: 100%; background: var(--ember); width: 100%; }
+      #hud-meter.blasting #hud-meter-fill { background: var(--cream); box-shadow: 0 0 12px var(--ember); }
+      #hud-meter.burnout { outline-color: var(--oil); animation: sputter 0.25s steps(2) infinite; }
+      #hud-meter.burnout #hud-meter-fill { background: repeating-linear-gradient(90deg, var(--ember) 0 6px, var(--oil) 6px 9px); }
+      #hud-meter-label { position: absolute; left: 0; right: 0; top: -26px; text-align: center; font-size: 15px; letter-spacing: 0.12em; color: var(--ember); }
+      @keyframes sputter { 50% { opacity: 0.55; } }
+      #hud-prompt { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); text-align: center; font-size: 19px; }
+      #hud-prompt.hidden { display: none; }
+      #hud-prompt .bar { margin: 8px auto 0; width: 160px; height: 4px; background: var(--oil); }
+      #hud-prompt-fill { height: 100%; width: 0; background: var(--cream); }
+      #hud-messages { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); text-align: center; font-size: 22px; font-style: italic;
+        color: var(--cream); text-shadow: 0 0 8px #000; }
+      #hud-messages div { margin: 6px 0; transition: opacity 0.3s; }
+      #minimap { position: absolute; right: 18px; top: 18px; width: 210px; height: 210px; opacity: 0.92; }
+      #bigmap { display: none; position: fixed; left: 50%; top: 50%; width: 80vmin; height: 80vmin; transform: translate(-50%, -50%);
+        z-index: 6; outline: 1px solid var(--ember); pointer-events: none; }
+      #endcard { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 8;
+        font-family: 'IM Fell English', Georgia, serif; color: var(--cream); text-align: center; transition: opacity 1.2s; }
+      #endcard.hidden { opacity: 0; pointer-events: none; }
+      #endcard h2 { font-weight: normal; font-size: clamp(30px, 5vw, 60px); color: var(--ember); margin: 0 0 14px; }
+      #end-stats { font-size: 18px; opacity: 0.85; margin-bottom: 30px; }
+      #endcard button { font: 20px 'IM Fell English', Georgia, serif; color: var(--cream); background: var(--oil); border: 1px solid var(--ember);
+        padding: 10px 22px; margin: 0 8px; cursor: pointer; }
+      #endcard button:hover { background: var(--ember); color: var(--ink); }
       #fps {
         position: fixed; left: 10px; top: 8px; font: 12px/1.3 ui-monospace, Menlo, Consolas, monospace;
         color: var(--cream); background: rgba(7, 6, 10, 0.6); padding: 3px 7px; pointer-events: none; z-index: 10;
@@ -39,13 +73,30 @@
     <canvas id="view"></canvas>
     <div id="overlay">
       <h1>LANTERNKEEPER</h1>
-      <div class="sub">ink &amp; ember — style prototype</div>
+      <div class="sub">the drowned undercroft</div>
+      <div class="goal">Kindle the <span id="obj-count">5</span> dead beacons. The last flame breaks the seal on the way out.<br />
+        Things live in the dark between them. Do not let them touch your flame.</div>
       <div class="keys">
-        <b>WASD</b> wade &nbsp; · &nbsp; <b>Shift</b> hurry &nbsp; · &nbsp; <b>Mouse</b> look<br />
-        <b>Click</b> / <b>F</b> shutter the lantern: focused beam ⟷ wide glow<br />
-        <b>H</b> hide the look-dev panel &nbsp; · &nbsp; <b>Esc</b> release the mouse
+        <b>WASD</b> wade &nbsp;·&nbsp; <b>Shift</b> hurry &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>M</b> (hold) map<br />
+        <b>Left click</b> / <b>F</b> shutter the lantern — the focused beam holds shadows still, and burns them frozen<br />
+        <b>Right click</b> (hold) drive fire through the lantern — burns shadows, drains the flame<br />
+        <b>Space</b> (mash) pump oil after a burnout &nbsp;·&nbsp; <b>E</b> (hold) kindle a beacon
       </div>
       <div class="go">click to take up the lantern</div>
+    </div>
+    <div id="hud" class="hidden">
+      <div id="hud-objective"></div>
+      <div id="hud-flames"></div>
+      <div id="hud-meter"><div id="hud-meter-fill"></div><span id="hud-meter-label"></span></div>
+      <div id="hud-prompt" class="hidden"><div id="hud-prompt-text"></div><div class="bar"><div id="hud-prompt-fill"></div></div></div>
+      <div id="hud-messages"></div>
+      <canvas id="minimap" width="210" height="210"></canvas>
+    </div>
+    <canvas id="bigmap"></canvas>
+    <div id="endcard" class="hidden">
+      <h2 id="end-title"></h2>
+      <div id="end-stats"></div>
+      <div class="buttons"><button id="end-new">Another descent</button><button id="end-retry">Same dark again</button></div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

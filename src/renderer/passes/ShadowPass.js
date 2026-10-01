@@ -29,8 +29,10 @@ export class ShadowPass {
     shared.uShadowMap.value = this.rt.texture;
   }
 
-  render(renderer, scene, lightPos, cageShadows) {
+  render(renderer, scene, lightPos, cageShadows, far = 40) {
     for (const cam of this.camera.children) {
+      // nothing beyond the light's range needs a shadow: cull it
+      if (Math.abs(cam.far - far) > 0.25) { cam.far = far; cam.updateProjectionMatrix(); }
       cam.layers.disableAll();
       cam.layers.enable(LAYERS.WORLD);
       if (cageShadows) cam.layers.enable(LAYERS.CAGE);

@@ -122,12 +122,14 @@ void main() {
   col += uOil * 0.7 * atten * sh * uLightIntensity * (0.4 + 0.6 * oilPatch); // barely-lit murk: water stays black
   col += refl;
   // oil contours glow faintly where light touches
-  float sheenLight = lk_sat(atten * sh * uLightIntensity * 1.5);
+  float beaconL = lk_beacons(vWorldPos, vec3(0.0, 1.0, 0.0));
+  col += uOil * 0.5 * beaconL;
+  float sheenLight = lk_sat(atten * sh * uLightIntensity * 1.5 + beaconL * 0.8);
   col = mix(col, mix(uOil * 5.0, uEmber * 0.6, sheenLight), oilLine * uWaterB.x * sheenLight * (0.25 + 0.5 * oilPatch));
   col = mix(col, uCream, lk_sat(glint) );
   col += uEmber * max(glint - 1.0, 0.0);
 
   gl_FragColor = vec4(col, 1.0);
   vec3 vn = normalize(mat3(viewMatrix) * vec3(0.0, 1.0, 0.0));
-  gNormal = vec4(vn * 0.5 + 0.5, lk_sat(atten * sh * uLightIntensity * 2.0 + lk_luma(refl) * 2.0));
+  gNormal = vec4(vn * 0.5 + 0.5, lk_sat(atten * sh * uLightIntensity * 2.0 + lk_luma(refl) * 2.0 + beaconL));
 }

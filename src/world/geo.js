@@ -54,18 +54,16 @@ export function finalize(geo, { tone = 0.75, gloss = 0.15, flat = false, matrix 
   return g;
 }
 
-// Merge into spatial chunks (binned along z, the long axis of the nave) so every
-// pass — especially the six cube-shadow faces — can frustum-cull most of the room.
-export function mergeChunked(list, binSize = 7) {
+// Merge into spatial chunks (2D bins on the ground plane) so every pass —
+// especially the six cube-shadow faces — can frustum-cull most of the level.
+export function mergeChunked(list, binSize = 8) {
   const bins = new Map();
   const box = new THREE.Box3();
   const c = new THREE.Vector3();
   for (const g of list) {
     box.setFromBufferAttribute(g.attributes.position);
     box.getCenter(c);
-    const size = box.getSize(new THREE.Vector3());
-    // very long pieces (vault, walls, floor) go in their own bin
-    const key = Math.max(size.x, size.z) > binSize * 2 ? 'big' : Math.floor(c.z / binSize) * 10 + (c.x < -2 ? 0 : c.x > 2 ? 2 : 1);
+    const key = `${Math.floor(c.x / binSize)},${Math.floor(c.z / binSize)}`;
     if (!bins.has(key)) bins.set(key, []);
     bins.get(key).push(g);
   }

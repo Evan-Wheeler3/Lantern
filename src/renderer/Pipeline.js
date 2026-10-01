@@ -98,7 +98,7 @@ export class Pipeline {
     shared.uPxScale.value = this.bufferSize[1] / (2 * Math.tan((camera.fov * Math.PI) / 360));
 
     // 1. shadows
-    this.shadow.render(r, scene, shared.uLightPos.value, settings.light.cageShadows);
+    this.shadow.render(r, scene, shared.uLightPos.value, settings.light.cageShadows, this.shadowFar || 40);
 
     // 2. reflection
     this.reflection.render(r, scene, camera);

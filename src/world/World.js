@@ -1,64 +1,48 @@
-// World system: builds the room, owns its dynamic pieces (chains, drips, embers,
-// water) and answers spatial queries (collision, ground height) for the player
-// and future gameplay systems (AI pathing, beacon interaction...).
+// World system: generates the dungeon for a seed, builds it, owns its dynamic
+// pieces (chains, drips, embers, water) and answers spatial queries for the
+// player, monsters and UI (collision, ground height, line of sight, rooms).
 import * as THREE from 'three';
-import { buildCathedral, LAYOUT } from './Cathedral.js';
-import { buildTallOne, buildMourner } from './Creatures.js';
+import { Dungeon } from './Dungeon.js';
+import { buildDungeon } from './DungeonBuilder.js';
+import { FLOOR_Y } from './props.js';
 import { Chains } from './Chains.js';
 import { Water } from './Water.js';
 import { Drips } from './Drips.js';
 import { Embers } from './Embers.js';
-import { createWorldMaterial, createCreatureMaterial } from '../renderer/Materials.js';
+import { createWorldMaterial } from '../renderer/Materials.js';
 import { LAYERS } from '../renderer/Layers.js';
-import { settings } from '../core/Settings.js';
 
 export class World {
-  constructor(scene, events) {
+  constructor(scene, events, seed) {
     this.scene = scene;
     this.events = events;
-    this.layout = LAYOUT;
+    this.layout = { floorY: FLOOR_Y, waterLevel: 0 };
 
-    const built = buildCathedral();
+    this.dungeon = new Dungeon(seed);
+    const dg = this.dungeon;
+    const built = buildDungeon(dg);
     this.colliders = built.colliders;
     this.walkables = built.walkables;
-    this.beacons = built.beacons; // gameplay hook: these will be lit later
+    this.beaconFires = built.beaconFires;
+    this.door = built.door;
 
     this.material = createWorldMaterial();
-    this.creatureMaterial = createCreatureMaterial();
-
-    this.room = new THREE.Group();
-    this.room.name = 'cathedral';
+    this.root = new THREE.Group();
+    this.root.name = 'dungeon';
     for (const g of built.geometries) {
       const m = new THREE.Mesh(g, this.material);
       m.layers.set(LAYERS.WORLD);
-      this.room.add(m);
+      this.root.add(m);
     }
-    scene.add(this.room);
+    scene.add(this.root);
 
-    // creatures (static, they only *watch*)
-    this.creatures = [];
-    const tall = new THREE.Mesh(buildTallOne(), this.creatureMaterial);
-    tall.position.set(1.4, LAYOUT.floorY + 0.05, -19.0);
-    tall.rotation.y = -0.15;
-    const mourner = new THREE.Mesh(buildMourner(), this.creatureMaterial);
-    mourner.position.set(5.9, LAYOUT.floorY + 0.1, -7.6);
-    mourner.rotation.y = 0.13; // bowed toward the dead beacon in the aisle
-    for (const c of [tall, mourner]) {
-      c.layers.set(LAYERS.WORLD);
-      scene.add(c);
-      this.creatures.push(c);
-      this.colliders.circles.push({ x: c.position.x, z: c.position.z, r: 0.45 });
-    }
-
-    this.chains = new Chains(built.chainAnchors, this.material);
+    this.chains = new Chains(built.chains, this.material);
     scene.add(this.chains.group);
 
-    this.water = new Water({
-      minX: -LAYOUT.halfWidth, maxX: LAYOUT.halfWidth, minZ: LAYOUT.platformZ, maxZ: LAYOUT.zEntrance, level: LAYOUT.waterLevel,
-    });
+    this.water = new Water({ minX: -dg.W / 2, maxX: dg.W / 2, minZ: -dg.H / 2, maxZ: dg.H / 2, level: 0 });
     scene.add(this.water.mesh);
 
-    this.drips = new Drips(built.dripSources, events, (x, z) => this.surfaceHeight(x, z));
+    this.drips = new Drips(built.drips, events, (x, z) => this.surfaceHeight(x, z));
     scene.add(this.drips.points);
 
     this.embers = new Embers();
@@ -68,36 +52,50 @@ export class World {
     events.on('footstep', (f) => { if (f.wet) this.water.ripples.add(f.x, f.z, 0.6 + f.speed * 0.15); });
   }
 
-  // Highest walkable surface under (x, z) (stairs, platform), else the drowned floor.
+  // Spawn pose: centre of the start room, facing its first hallway.
+  startPose() {
+    const r = this.dungeon.start;
+    const to = this.dungeon.rooms[r.links[0]] || r;
+    const yaw = Math.atan2(-(to.cx - r.cx), -(to.cz - r.cz));
+    return { x: r.cx, z: r.cz, yaw };
+  }
+
   groundHeight(x, z) {
-    let h = LAYOUT.floorY;
+    let h = FLOOR_Y;
     for (const w of this.walkables) {
       if (x >= w.minX && x <= w.maxX && z >= w.minZ && z <= w.maxZ) h = Math.max(h, w.top);
     }
     return h;
   }
 
-  // Where something falling from above would land (water surface or dry stone).
   surfaceHeight(x, z) {
-    return Math.max(LAYOUT.waterLevel, this.groundHeight(x, z));
+    return Math.max(this.layout.waterLevel, this.groundHeight(x, z));
   }
 
-  // True if a circle of `radius` at (x,z) overlaps a solid at foot height `feet`.
-  blocked(x, z, radius, feet) {
-    const L = LAYOUT;
-    if (x < -L.halfWidth + radius || x > L.halfWidth - radius) return true;
-    if (z > L.zEntrance - radius || z < L.zApse + radius) return true;
+  // Circle of `radius` at (x,z) overlaps a wall cell, pillar or prop?
+  // `extraSolid(i, j)` lets monsters treat sanctuaries as walls.
+  blocked(x, z, radius, feet = FLOOR_Y, extraSolid = null) {
+    const dg = this.dungeon;
+    const i0 = dg.toI(x - radius), i1 = dg.toI(x + radius);
+    const j0 = dg.toJ(z - radius), j1 = dg.toJ(z + radius);
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        if (dg.isFloor(i, j) && !(extraSolid && extraSolid(i, j))) continue;
+        const cx = Math.max(dg.cellX(i) - 0.5, Math.min(x, dg.cellX(i) + 0.5));
+        const cz = Math.max(dg.cellZ(j) - 0.5, Math.min(z, dg.cellZ(j) + 0.5));
+        if ((x - cx) ** 2 + (z - cz) ** 2 < radius * radius) return true;
+      }
+    }
     for (const c of this.colliders.circles) {
       const dx = x - c.x, dz = z - c.z;
       const r = c.r + radius;
       if (dx * dx + dz * dz < r * r) return true;
     }
     for (const b of this.colliders.boxes) {
-      if (feet >= b.top - 0.05) continue; // standing on top of it
+      if (feet >= b.top - 0.05) continue;
       const cx = Math.max(b.minX, Math.min(x, b.maxX));
       const cz = Math.max(b.minZ, Math.min(z, b.maxZ));
-      const dx = x - cx, dz = z - cz;
-      if (dx * dx + dz * dz < radius * radius) return true;
+      if ((x - cx) ** 2 + (z - cz) ** 2 < radius * radius) return true;
     }
     return false;
   }
@@ -107,7 +105,5 @@ export class World {
     this.drips.update(dt);
     this.embers.update();
     this.water.update();
-    const c = settings.creatures;
-    this.creatureMaterial.uniforms.uRim.value.set(c.rimPower, c.rimThreshold, c.rimBase);
   }
 }

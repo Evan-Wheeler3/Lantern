@@ -27,6 +27,9 @@ export const shared = {
   uNoise3D: { value: null },
   // projection scale for point sprites: bufferHeight / (2 tan(fov/2))
   uPxScale: { value: 800 },
+  // kindled beacons (see lk_beacons in lighting.glsl); written by the Beacons system
+  uBeaconPos: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+  uBeaconBox: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
 };
 
 const tmpColor = new THREE.Color();

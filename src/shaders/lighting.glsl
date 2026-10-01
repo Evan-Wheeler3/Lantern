@@ -62,4 +62,37 @@ float lk_shadow(vec3 worldPos, vec3 N) {
   return s;
 }
 
+// ---- Kindled beacons --------------------------------------------------------
+// Up to LK_MAX_BEACONS extra fires. No shadow maps: each fire is confined to its
+// room's bounds (xz box) instead, which stops light leaking through walls.
+#define LK_MAX_BEACONS 8
+uniform vec4 uBeaconPos[LK_MAX_BEACONS]; // xyz, intensity (0 = unlit)
+uniform vec4 uBeaconBox[LK_MAX_BEACONS]; // minX, minZ, maxX, maxZ
+
+float lk_beaconAtten(int i, vec3 p, out vec3 L) {
+  vec4 b = uBeaconPos[i];
+  L = vec3(0.0, 1.0, 0.0);
+  if (b.w <= 0.0) return 0.0;
+  vec4 bx = uBeaconBox[i];
+  if (p.x < bx.x || p.x > bx.z || p.z < bx.y || p.z > bx.w) return 0.0;
+  vec3 tl = b.xyz - p;
+  float d = length(tl);
+  L = tl / max(d, 1e-4);
+  float x = d / 16.0;
+  float win = lk_sat(1.0 - x * x * x * x);
+  return win * win / (1.0 + 0.05 * d * d) * b.w;
+}
+
+// Summed diffuse from all kindled beacons (N may be zero for "ambient-ish" use).
+float lk_beacons(vec3 p, vec3 N) {
+  float s = 0.0;
+  for (int i = 0; i < LK_MAX_BEACONS; i++) {
+    vec3 L;
+    float a = lk_beaconAtten(i, p, L);
+    if (a <= 0.0) continue;
+    s += a * (dot(N, N) > 0.0 ? max(dot(N, L), 0.0) : 1.0);
+  }
+  return s;
+}
+
 #endif
